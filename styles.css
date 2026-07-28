@@ -79,7 +79,7 @@ button { font-family: inherit; }
   color: var(--text);
   cursor: pointer;
 }
-.brand { display: flex; align-items: center; gap: 12px; font-weight: 700; font-size: 22px; }
+.brand { display: flex; align-items: center; gap: 12px; font-weight: 700; font-size: 22px; flex-shrink: 0; white-space: nowrap; }
 .brand-mark {
   display: inline-flex; align-items: center; justify-content: center;
   padding: 5px 10px; border-radius: 8px; background: #fff;
@@ -88,6 +88,10 @@ button { font-family: inherit; }
 @media (max-width: 760px) {
   .brand { font-size: 18px; }
   .brand-logo-img { height: 30px; }
+}
+@media (max-width: 420px) {
+  .brand { white-space: normal; font-size: 15px; line-height: 1.15; gap: 8px; }
+  .brand-logo-img { height: 26px; }
 }
 .topnav { display: flex; gap: 4px; margin-left: 12px; flex-wrap: wrap; }
 .topnav a {

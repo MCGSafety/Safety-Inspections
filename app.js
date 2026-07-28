@@ -386,6 +386,11 @@ async function render() {
       else if (seg1) { updateActiveNav("inspections"); await renderInspectionReport(seg1); }
       else { updateActiveNav("inspections"); await renderInspectionsHistory(); }
     } else if (seg0 === "issues") { updateActiveNav("issues"); await renderIssues(); }
+    else if (seg0 === "locations") {
+      updateActiveNav("locations");
+      if (seg1) { await renderLocationDashboard(decodeURIComponent(seg1)); }
+      else { await renderLocationsList(); }
+    }
     else if (seg0 === "settings") { updateActiveNav("settings"); await renderSettings(); }
     else { contentEl.innerHTML = `<div class="empty-state"><h3>Page not found</h3><p><a href="#/dashboard">Go to dashboard</a></p></div>`; }
   } catch (e) {
@@ -412,8 +417,7 @@ function renderInspectionListItem(insp) {
     </a>`;
 }
 
-async function renderDashboard() {
-  const [templates, inspections, issues] = await Promise.all([Store.getTemplates(), Store.getInspections(), Store.getIssues()]);
+function buildDashboardBody({ inspections, issues, templates }) {
   const completed = inspections.filter((i) => i.status === "completed");
   let pass = 0, fail = 0;
   completed.forEach((i) => i.items.forEach((it) => {
@@ -437,27 +441,11 @@ async function renderDashboard() {
   const severityChart = severityCounts(openIssues);
   const hasSeverityData = severityChart.some((d) => d.value > 0);
 
-  contentEl.innerHTML = `
-    <div class="print-header">
-      <img src="logo.jpg" alt="Mission Critical Group" />
-      <div>
-        <div class="print-header-title">Safety Inspection Dashboard</div>
-        <div class="print-header-sub">Generated ${formatDate(nowIso())}</div>
-      </div>
-    </div>
-    <div class="page-header">
-      <div>
-        <h1>Dashboard</h1>
-        <p>Overview of your safety inspection program.</p>
-      </div>
-      <div style="display:flex; gap:8px; flex-wrap:wrap;">
-        <button class="btn" id="dashShareBtn">🔗 Share</button>
-        <button class="btn" id="dashPrintBtn">🖨 Print</button>
-        <a class="btn" href="#/templates/new">+ New Template</a>
-        <a class="btn btn-primary" href="#/inspections/new">+ New Inspection</a>
-      </div>
-    </div>
+  const fourthStat = templates
+    ? `<div class="card stat-card"><div class="stat-label">Templates</div><div class="stat-value">${templates.length}</div><div class="stat-sub">Checklist types</div></div>`
+    : `<div class="card stat-card"><div class="stat-label">Total Inspections</div><div class="stat-value">${inspections.length}</div><div class="stat-sub">All time</div></div>`;
 
+  return `
     <div class="grid-stats">
       <div class="card stat-card">
         <div class="stat-label">Open Issues</div>
@@ -474,11 +462,7 @@ async function renderDashboard() {
         <div class="stat-value">${thisMonth.length}</div>
         <div class="stat-sub">${inspections.length} total</div>
       </div>
-      <div class="card stat-card">
-        <div class="stat-label">Templates</div>
-        <div class="stat-value">${templates.length}</div>
-        <div class="stat-sub">Checklist types</div>
-      </div>
+      ${fourthStat}
     </div>
 
     <div class="section-title" style="margin-top:8px;">Trends</div>
@@ -524,11 +508,96 @@ async function renderDashboard() {
       </div>
     </div>
   `;
+}
+
+async function renderDashboard() {
+  const [templates, inspections, issues] = await Promise.all([Store.getTemplates(), Store.getInspections(), Store.getIssues()]);
+
+  contentEl.innerHTML = `
+    <div class="print-header">
+      <img src="logo.jpg" alt="Mission Critical Group" />
+      <div>
+        <div class="print-header-title">Safety Inspection Dashboard</div>
+        <div class="print-header-sub">Generated ${formatDate(nowIso())}</div>
+      </div>
+    </div>
+    <div class="page-header">
+      <div>
+        <h1>Dashboard</h1>
+        <p>Overview of your safety inspection program.</p>
+      </div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="btn" id="dashShareBtn">🔗 Share</button>
+        <button class="btn" id="dashPrintBtn">🖨 Print</button>
+        <a class="btn" href="#/templates/new">+ New Template</a>
+        <a class="btn btn-primary" href="#/inspections/new">+ New Inspection</a>
+      </div>
+    </div>
+
+    ${buildDashboardBody({ inspections, issues, templates })}
+  `;
 
   document.getElementById("dashShareBtn").addEventListener("click", () => {
     shareLink(buildAppUrl("#/dashboard"), "Safety Inspection Dashboard", "Safety inspection dashboard");
   });
   document.getElementById("dashPrintBtn").addEventListener("click", () => window.print());
+}
+
+/* ---------------- Location dashboards ---------------- */
+
+async function renderLocationsList() {
+  const [locations, inspections, issues] = await Promise.all([Store.getLocations(), Store.getInspections(), Store.getIssues()]);
+  contentEl.innerHTML = `
+    <div class="page-header">
+      <div><h1>Locations</h1><p>A dashboard for each site.</p></div>
+    </div>
+    ${locations.length ? `<div class="list">${locations.map((loc) => {
+      const locInsp = inspections.filter((i) => i.location === loc.name);
+      const locOpenIssues = issues.filter((i) => i.location === loc.name && i.status === "open");
+      return `
+        <a class="list-item ${locOpenIssues.length ? "issue-open" : ""}" href="#/locations/${encodeURIComponent(loc.name)}">
+          <div class="list-item-main">
+            <div class="list-item-title">${escapeHtml(loc.name)}</div>
+            <div class="list-item-sub">${locInsp.length} inspection${locInsp.length === 1 ? "" : "s"}</div>
+          </div>
+          ${locOpenIssues.length ? `<span class="badge badge-danger">${locOpenIssues.length} open issue${locOpenIssues.length === 1 ? "" : "s"}</span>` : `<span class="badge badge-success">All clear</span>`}
+        </a>`;
+    }).join("")}</div>`
+      : `<div class="empty-state"><h3>No locations yet</h3><p>Locations are added from the Location dropdown when starting an inspection.</p></div>`}
+  `;
+}
+
+async function renderLocationDashboard(name) {
+  const [inspectionsAll, issuesAll] = await Promise.all([Store.getInspections(), Store.getIssues()]);
+  const inspections = inspectionsAll.filter((i) => i.location === name);
+  const issues = issuesAll.filter((i) => i.location === name);
+
+  contentEl.innerHTML = `
+    <div class="print-header">
+      <img src="logo.jpg" alt="Mission Critical Group" />
+      <div>
+        <div class="print-header-title">${escapeHtml(name)} — Location Dashboard</div>
+        <div class="print-header-sub">Generated ${formatDate(nowIso())}</div>
+      </div>
+    </div>
+    <div class="page-header">
+      <div>
+        <h1>${escapeHtml(name)}</h1>
+        <p><a href="#/locations">← All Locations</a></p>
+      </div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="btn" id="locShareBtn">🔗 Share</button>
+        <button class="btn" id="locPrintBtn">🖨 Print</button>
+      </div>
+    </div>
+
+    ${buildDashboardBody({ inspections, issues, templates: null })}
+  `;
+
+  document.getElementById("locShareBtn").addEventListener("click", () => {
+    shareLink(buildAppUrl(`#/locations/${encodeURIComponent(name)}`), `${name} Dashboard`, `Safety inspection dashboard for ${name}`);
+  });
+  document.getElementById("locPrintBtn").addEventListener("click", () => window.print());
 }
 
 /* ---------------- Templates List ---------------- */
