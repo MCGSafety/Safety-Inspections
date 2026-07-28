@@ -426,6 +426,12 @@ function buildDashboardBody({ inspections, issues, templates }) {
   const scored = pass + fail;
   const passRate = scored > 0 ? Math.round((pass / scored) * 100) : null;
   const openIssues = issues.filter((i) => i.status === "open");
+  const resolvedIssues = issues.filter((i) => i.status === "resolved");
+  const totalIssues = openIssues.length + resolvedIssues.length;
+  const resolutionRate = totalIssues > 0 ? Math.round((resolvedIssues.length / totalIssues) * 100) : null;
+  const recentResolved = resolvedIssues.slice()
+    .sort((a, b) => new Date(b.resolvedAt || b.createdAt) - new Date(a.resolvedAt || a.createdAt))
+    .slice(0, 5);
   const now = new Date();
   const thisMonth = inspections.filter((i) => {
     const d = new Date(i.createdAt);
@@ -451,6 +457,11 @@ function buildDashboardBody({ inspections, issues, templates }) {
         <div class="stat-label">Open Issues</div>
         <div class="stat-value" style="color:${openIssues.length ? "var(--danger)" : "var(--text)"}">${openIssues.length}</div>
         <div class="stat-sub">Needing follow-up</div>
+      </div>
+      <div class="card stat-card">
+        <div class="stat-label">Issues Resolved</div>
+        <div class="stat-value" style="color:var(--success)">${resolvedIssues.length}</div>
+        <div class="stat-sub">${resolutionRate === null ? "No issues yet" : resolutionRate + "% resolution rate"}</div>
       </div>
       <div class="card stat-card">
         <div class="stat-label">Pass Rate</div>
@@ -505,6 +516,17 @@ function buildDashboardBody({ inspections, issues, templates }) {
             ${severityBadge(iss.severity)}
           </a>`).join("")}</div>`
           : `<div class="empty-state" style="padding:24px 14px;"><p style="margin:0">No open issues 🎉</p></div>`}
+
+        <div class="section-title">Recently Resolved</div>
+        ${recentResolved.length ? `<div class="list">${recentResolved.map((iss) => `
+          <a class="list-item issue-resolved" href="#/issues" style="cursor:pointer">
+            <div class="list-item-main">
+              <div class="list-item-title">${escapeHtml(iss.itemText)}</div>
+              <div class="list-item-sub">${escapeHtml(iss.inspectionTitle)} · Resolved ${formatDate(iss.resolvedAt)}</div>
+              ${iss.resolutionNotes ? `<div class="hint" style="margin-top:4px; color:var(--success);">${escapeHtml(iss.resolutionNotes)}</div>` : ""}
+            </div>
+          </a>`).join("")}</div>`
+          : `<div class="empty-state" style="padding:24px 14px;"><p style="margin:0">Nothing resolved yet</p></div>`}
       </div>
     </div>
   `;
