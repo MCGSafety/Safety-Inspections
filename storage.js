@@ -105,6 +105,7 @@ function fromInspectionRecord(rec) {
     title: rec.fields.Title || "",
     inspector: rec.fields.Inspector || "",
     location: rec.fields.Location || "",
+    workArea: rec.fields.WorkArea || "",
     date: rec.fields.Date || "",
     status: rec.fields.Status || "in-progress",
     items: rec.fields.Items ? JSON.parse(rec.fields.Items) : [],
@@ -119,6 +120,7 @@ function toInspectionFields(insp) {
     TemplateName: insp.templateName,
     Inspector: insp.inspector || "",
     Location: insp.location || "",
+    WorkArea: insp.workArea || "",
     Date: insp.date,
     Status: insp.status,
     Items: JSON.stringify((insp.items || []).map((it) => ({ id: it.id, text: it.text, result: it.result, notes: it.notes }))),
@@ -609,6 +611,14 @@ const Store = {
   },
   async addLocation(name) {
     const rec = await atCreate("Locations", { Name: name });
+    return { id: rec.id, name: rec.fields.Name || name };
+  },
+  async getWorkAreas() {
+    const records = await atListAll("Work Areas", { "sort[0][field]": "Name", "sort[0][direction]": "asc" });
+    return records.map((r) => ({ id: r.id, name: r.fields.Name || "" })).filter((r) => r.name);
+  },
+  async addWorkArea(name) {
+    const rec = await atCreate("Work Areas", { Name: name });
     return { id: rec.id, name: rec.fields.Name || name };
   },
 };

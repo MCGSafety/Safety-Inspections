@@ -805,7 +805,7 @@ function renderTemplateItemsRows() {
 /* ---------------- New Inspection picker ---------------- */
 
 async function renderNewInspection() {
-  const [templates, inspectors, locations] = await Promise.all([Store.getTemplates(), Store.getInspectors(), Store.getLocations()]);
+  const [templates, inspectors, locations, workAreas] = await Promise.all([Store.getTemplates(), Store.getInspectors(), Store.getLocations(), Store.getWorkAreas()]);
   if (!templates.length) {
     contentEl.innerHTML = `<div class="page-header"><div><h1>New Inspection</h1></div></div>
       <div class="empty-state"><h3>No templates yet</h3><p>Create a checklist template first.</p><a class="btn btn-primary" style="margin-top:10px" href="#/templates/new">+ New Template</a></div>`;
@@ -836,9 +836,15 @@ async function renderNewInspection() {
           <input type="date" id="niDate" value="${today}" />
         </div>
       </div>
-      <div class="form-group">
-        <label for="niLocation">Site</label>
-        <select id="niLocation">${selectOptionsHtml(locations, "")}</select>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="niLocation">Site</label>
+          <select id="niLocation">${selectOptionsHtml(locations, "")}</select>
+        </div>
+        <div class="form-group">
+          <label for="niWorkArea">Work Area</label>
+          <select id="niWorkArea">${selectOptionsHtml(workAreas, "")}</select>
+        </div>
       </div>
       <div class="modal-actions" style="justify-content:flex-start; margin-top:22px;">
         <button class="btn btn-primary" id="startInspectionBtn">Start Inspection</button>
@@ -859,6 +865,7 @@ async function renderNewInspection() {
   titleInput.addEventListener("input", () => { titleInput.dataset.touched = "1"; });
   wirePickOrAddSelect(document.getElementById("niInspector"), "New inspector name:", Store.addInspector, () => {});
   wirePickOrAddSelect(document.getElementById("niLocation"), "New site:", Store.addLocation, () => {});
+  wirePickOrAddSelect(document.getElementById("niWorkArea"), "New work area:", Store.addWorkArea, () => {});
 
   document.getElementById("startInspectionBtn").addEventListener("click", async () => {
     const tpl = templates.find((t) => t.id === templateSelect.value);
@@ -866,6 +873,7 @@ async function renderNewInspection() {
     const title = titleInput.value.trim() || tpl.name;
     const inspector = document.getElementById("niInspector").value.trim();
     const location_ = document.getElementById("niLocation").value.trim();
+    const workArea = document.getElementById("niWorkArea").value.trim();
     const date = document.getElementById("niDate").value || new Date().toISOString().slice(0, 10);
 
     const insp = {
@@ -875,6 +883,7 @@ async function renderNewInspection() {
       title,
       inspector,
       location: location_,
+      workArea,
       date,
       status: "in-progress",
       items: tpl.items.map((it) => ({ id: it.id, text: it.text, result: null, notes: "", photos: [] })),
@@ -913,7 +922,7 @@ async function flushInspectionSave(insp) {
 }
 
 async function renderInspectionRun(id) {
-  const [insp, inspectors, locations] = await Promise.all([Store.getInspection(id), Store.getInspectors(), Store.getLocations()]);
+  const [insp, inspectors, locations, workAreas] = await Promise.all([Store.getInspection(id), Store.getInspectors(), Store.getLocations(), Store.getWorkAreas()]);
   if (!insp) { contentEl.innerHTML = `<div class="empty-state"><h3>Inspection not found</h3><a href="#/inspections">Back to history</a></div>`; return; }
   const answered = insp.items.filter((it) => it.result).length;
   const pct = insp.items.length ? Math.round((answered / insp.items.length) * 100) : 0;
@@ -940,9 +949,15 @@ async function renderInspectionRun(id) {
           <select id="riLocation">${selectOptionsHtml(locations, insp.location)}</select>
         </div>
       </div>
-      <div class="form-group" style="margin-bottom:0; margin-top:14px; max-width:220px;">
-        <label for="riDate">Date</label>
-        <input type="date" id="riDate" value="${escapeHtml(insp.date)}" />
+      <div class="form-row" style="margin-top:14px;">
+        <div class="form-group" style="margin-bottom:0">
+          <label for="riWorkArea">Work Area</label>
+          <select id="riWorkArea">${selectOptionsHtml(workAreas, insp.workArea)}</select>
+        </div>
+        <div class="form-group" style="margin-bottom:0; max-width:220px;">
+          <label for="riDate">Date</label>
+          <input type="date" id="riDate" value="${escapeHtml(insp.date)}" />
+        </div>
       </div>
     </div>
 
@@ -963,6 +978,7 @@ async function renderInspectionRun(id) {
 
   wirePickOrAddSelect(document.getElementById("riInspector"), "New inspector name:", Store.addInspector, (val) => { insp.inspector = val; scheduleInspectionSave(insp); });
   wirePickOrAddSelect(document.getElementById("riLocation"), "New site:", Store.addLocation, (val) => { insp.location = val; scheduleInspectionSave(insp); });
+  wirePickOrAddSelect(document.getElementById("riWorkArea"), "New work area:", Store.addWorkArea, (val) => { insp.workArea = val; scheduleInspectionSave(insp); });
   document.getElementById("riDate").addEventListener("input", (e) => { insp.date = e.target.value; scheduleInspectionSave(insp); });
 
   document.getElementById("photoInput").addEventListener("change", async (e) => {
@@ -1161,13 +1177,13 @@ async function renderInspectionReport(id) {
       <img src="logo.jpg" alt="Mission Critical Group" />
       <div>
         <div class="print-header-title">${escapeHtml(insp.title)}</div>
-        <div class="print-header-sub">${escapeHtml(insp.templateName)} · ${escapeHtml(insp.inspector || "Unassigned")} · ${escapeHtml(insp.location || "No site")} · ${formatDate(insp.date)}</div>
+        <div class="print-header-sub">${escapeHtml(insp.templateName)} · ${escapeHtml(insp.inspector || "Unassigned")} · ${escapeHtml(insp.location || "No site")}${insp.workArea ? " · " + escapeHtml(insp.workArea) : ""} · ${formatDate(insp.date)}</div>
       </div>
     </div>
     <div class="page-header">
       <div>
         <h1>${escapeHtml(insp.title)}</h1>
-        <p>${escapeHtml(insp.templateName)} · ${escapeHtml(insp.inspector || "Unassigned")} · ${escapeHtml(insp.location || "No site")} · ${formatDate(insp.date)}</p>
+        <p>${escapeHtml(insp.templateName)} · ${escapeHtml(insp.inspector || "Unassigned")} · ${escapeHtml(insp.location || "No site")}${insp.workArea ? " · " + escapeHtml(insp.workArea) : ""} · ${formatDate(insp.date)}</p>
       </div>
       <div style="display:flex; gap:8px;">
         <button class="btn" id="shareBtn">🔗 Share</button>
