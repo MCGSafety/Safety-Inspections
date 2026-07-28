@@ -78,17 +78,23 @@ function formatShortDate(iso) {
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-function monthlyInspectionCounts(inspections, months = 6) {
+function monthlyInspectionCounts(inspections, months = 6, completedTarget = null) {
   const now = new Date();
   const buckets = [];
   for (let i = months - 1; i >= 0; i--) {
     const monthStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
     const monthEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 1);
-    const value = inspections.filter((insp) => {
+    const inMonth = inspections.filter((insp) => {
       const d = new Date(insp.date || insp.createdAt);
       return d >= monthStart && d < monthEnd;
-    }).length;
-    buckets.push({ label: monthStart.toLocaleDateString(undefined, { month: "short" }), value });
+    });
+    const completed = inMonth.filter((insp) => insp.status === "completed").length;
+    const underTarget = completedTarget !== null && completed < completedTarget;
+    buckets.push({
+      label: monthStart.toLocaleDateString(undefined, { month: "short" }),
+      value: inMonth.length,
+      color: underTarget ? "var(--danger)" : "var(--primary)",
+    });
   }
   return buckets;
 }
@@ -411,7 +417,7 @@ function renderInspectionListItem(insp) {
     </a>`;
 }
 
-function buildDashboardBody({ inspections, issues }) {
+function buildDashboardBody({ inspections, issues, perSite = false }) {
   const completed = inspections.filter((i) => i.status === "completed");
   let pass = 0, fail = 0;
   completed.forEach((i) => i.items.forEach((it) => {
@@ -434,7 +440,7 @@ function buildDashboardBody({ inspections, issues }) {
   const recentInspections = inspections.slice(0, 5);
   const topIssues = openIssues.slice().sort((a, b) => (b.severity === "high") - (a.severity === "high")).slice(0, 5);
 
-  const monthlyChart = monthlyInspectionCounts(inspections, 6);
+  const monthlyChart = monthlyInspectionCounts(inspections, 6, perSite ? 4 : null);
   const hasMonthlyActivity = monthlyChart.some((d) => d.value > 0);
   const trendChart = passRateTrend(completed, 10);
   const na = completed.reduce((sum, i) => sum + i.items.filter((it) => it.result === "na").length, 0);
@@ -602,7 +608,7 @@ async function renderLocationDashboard(name) {
       </div>
     </div>
 
-    ${buildDashboardBody({ inspections, issues })}
+    ${buildDashboardBody({ inspections, issues, perSite: true })}
   `;
 
   document.getElementById("locShareBtn").addEventListener("click", () => {
