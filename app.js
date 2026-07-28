@@ -1,0 +1,1040 @@
+/* SafeCheck — Safety Inspections app (vanilla JS, no build step) */
+
+const contentEl = document.getElementById("app-content");
+let seedChecked = false;
+
+/* ---------------- helpers ---------------- */
+
+function escapeHtml(str) {
+  return String(str == null ? "" : str).replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  }[c]));
+}
+
+function formatDate(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (isNaN(d)) return "—";
+  return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+}
+
+function showToast(msg, ms = 2600) {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.hidden = false;
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => { t.hidden = true; }, ms);
+}
+
+function confirmDialog({ title, message, confirmText = "Delete", danger = true, onConfirm }) {
+  const backdrop = document.createElement("div");
+  backdrop.className = "modal-backdrop";
+  backdrop.innerHTML = `
+    <div class="modal">
+      <h3>${escapeHtml(title)}</h3>
+      <p>${escapeHtml(message)}</p>
+      <div class="modal-actions">
+        <button class="btn" id="modalCancel">Cancel</button>
+        <button class="btn ${danger ? "btn-danger" : "btn-primary"}" id="modalConfirm">${escapeHtml(confirmText)}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(backdrop);
+  backdrop.addEventListener("click", (e) => { if (e.target === backdrop) backdrop.remove(); });
+  backdrop.querySelector("#modalCancel").onclick = () => backdrop.remove();
+  backdrop.querySelector("#modalConfirm").onclick = () => { backdrop.remove(); onConfirm(); };
+}
+
+function statusBadge(status) {
+  if (status === "completed") return `<span class="badge badge-success">Completed</span>`;
+  if (status === "in-progress") return `<span class="badge badge-warning">In Progress</span>`;
+  return `<span class="badge badge-neutral">${escapeHtml(status)}</span>`;
+}
+
+function resultBadge(result) {
+  if (result === "pass") return `<span class="badge badge-success">Pass</span>`;
+  if (result === "fail") return `<span class="badge badge-danger">Fail</span>`;
+  if (result === "na") return `<span class="badge badge-neutral">N/A</span>`;
+  return `<span class="badge badge-neutral">Unanswered</span>`;
+}
+
+function severityBadge(sev) {
+  if (sev === "high") return `<span class="badge badge-danger">High</span>`;
+  if (sev === "low") return `<span class="badge badge-neutral">Low</span>`;
+  return `<span class="badge badge-warning">Medium</span>`;
+}
+
+function scoreFor(items) {
+  let pass = 0, fail = 0;
+  items.forEach((it) => { if (it.result === "pass") pass++; else if (it.result === "fail") fail++; });
+  const scored = pass + fail;
+  return scored > 0 ? Math.round((pass / scored) * 100) : null;
+}
+
+function compressImageToBlob(file, maxDim = 900, quality = 0.72) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error);
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("Could not read image"));
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) { height = Math.round(height * (maxDim / width)); width = maxDim; }
+          else { width = Math.round(width * (maxDim / height)); height = maxDim; }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width; canvas.height = height;
+        canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+        canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("Compression failed"))), "image/jpeg", quality);
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function goto(hash) {
+  if (location.hash === hash) render();
+  else location.hash = hash;
+}
+
+/* ---------------- reusable "pick or add" dropdowns (inspector/location) ---------------- */
+
+function selectOptionsHtml(items, currentValue) {
+  const names = items.map((i) => i.name);
+  let html = `<option value="">— Select —</option>`;
+  if (currentValue && !names.includes(currentValue)) {
+    html += `<option value="${escapeHtml(currentValue)}" selected>${escapeHtml(currentValue)}</option>`;
+  }
+  html += items.map((i) => `<option value="${escapeHtml(i.name)}" ${i.name === currentValue ? "selected" : ""}>${escapeHtml(i.name)}</option>`).join("");
+  html += `<option value="__new__">+ Add new…</option>`;
+  return html;
+}
+
+function wirePickOrAddSelect(selectEl, promptLabel, addFn, onValue) {
+  let lastValue = selectEl.value;
+  selectEl.addEventListener("change", async () => {
+    if (selectEl.value === "__new__") {
+      const name = (window.prompt(promptLabel) || "").trim();
+      if (!name) { selectEl.value = lastValue; return; }
+      const existingOpt = Array.from(selectEl.options).find((o) => o.value !== "__new__" && o.value.toLowerCase() === name.toLowerCase());
+      if (existingOpt) {
+        selectEl.value = existingOpt.value;
+      } else {
+        try {
+          await addFn(name);
+        } catch (err) {
+          console.error(err);
+          showToast("Could not save — check your connection");
+        }
+        const opt = document.createElement("option");
+        opt.value = name;
+        opt.textContent = name;
+        selectEl.insertBefore(opt, selectEl.querySelector('option[value="__new__"]'));
+        selectEl.value = name;
+      }
+    }
+    lastValue = selectEl.value;
+    onValue(selectEl.value);
+  });
+}
+
+/* ---------------- setup / settings screens ---------------- */
+
+function renderSetupScreen(errorMsg) {
+  contentEl.innerHTML = `
+    <div class="card card-pad" style="max-width:520px; margin: 40px auto;">
+      <h1 style="margin-top:0;">Connect to Airtable</h1>
+      <p class="hint">SafeCheck stores its data in a shared Airtable base so every device sees the same inspections. Paste a Personal Access Token to connect this device.</p>
+      ${errorMsg ? `<p class="hint" style="color:var(--danger)">${escapeHtml(errorMsg)}</p>` : ""}
+      <div class="form-group">
+        <label for="setupToken">Personal Access Token</label>
+        <input type="password" id="setupToken" placeholder="patXXXXXXXXXXXXXX.xxxxxxxx..." />
+      </div>
+      <button class="btn btn-primary" id="setupConnectBtn">Connect</button>
+      <p class="hint" style="margin-top:14px;">
+        No token yet? Go to <strong>airtable.com/create/tokens</strong>, create one with scopes
+        <strong>data.records:read</strong> and <strong>data.records:write</strong>, grant it access to the
+        <strong>SafeCheck</strong> base, then paste it here. Everyone on your team uses the same base — either
+        share this token or have each person create their own with access to SafeCheck.
+      </p>
+    </div>
+  `;
+  document.getElementById("setupConnectBtn").addEventListener("click", async () => {
+    const token = document.getElementById("setupToken").value.trim();
+    if (!token) { showToast("Enter your Personal Access Token"); return; }
+    const btn = document.getElementById("setupConnectBtn");
+    btn.disabled = true;
+    setAirtableToken(token);
+    initAirtableClient();
+    try {
+      await atListAll("Templates", { pageSize: "1", maxRecords: "1" });
+      location.reload();
+    } catch (e) {
+      clearAirtableToken();
+      renderSetupScreen(e.message || "Could not connect — check the token and its permissions.");
+    }
+  });
+}
+
+async function renderSettings() {
+  contentEl.innerHTML = `
+    <div class="page-header"><div><h1>Settings</h1></div></div>
+    <div class="card card-pad" style="max-width:480px;">
+      <div class="form-group" style="margin-bottom:0;">
+        <label>Connected base</label>
+        <div>SafeCheck — <a href="https://airtable.com/${AIRTABLE_BASE_ID}" target="_blank" rel="noopener">open in Airtable ↗</a></div>
+      </div>
+      <div class="modal-actions" style="justify-content:flex-start; margin-top:20px;">
+        <button class="btn btn-ghost" id="changeTokenBtn" style="color:var(--danger)">Disconnect This Device</button>
+      </div>
+    </div>
+  `;
+  document.getElementById("changeTokenBtn").addEventListener("click", () => {
+    confirmDialog({
+      title: "Disconnect this device?",
+      message: "This clears the saved token on this device only. Your data stays in Airtable.",
+      confirmText: "Disconnect",
+      onConfirm: () => { clearAirtableToken(); location.reload(); },
+    });
+  });
+}
+
+/* ---------------- boot + router ---------------- */
+
+function updateActiveNav(routeKey) {
+  document.querySelectorAll(".topnav a").forEach((a) => {
+    a.classList.toggle("active", a.dataset.route === routeKey);
+  });
+}
+
+function closeMobileNav() {
+  document.querySelector(".topnav").classList.remove("open");
+}
+
+function boot() {
+  document.getElementById("navToggle").addEventListener("click", () => {
+    document.querySelector(".topnav").classList.toggle("open");
+  });
+  document.querySelectorAll(".topnav a").forEach((a) => a.addEventListener("click", () => closeMobileNav()));
+  window.addEventListener("hashchange", render);
+
+  if (!initAirtableClient()) { renderSetupScreen(); return; }
+  render();
+}
+
+async function render() {
+  if (!airtableToken) { renderSetupScreen(); return; }
+
+  if (!seedChecked) {
+    seedChecked = true;
+    try { await Store.ensureSeeded(); } catch (e) { console.error(e); showToast("Could not load starter templates"); }
+  }
+
+  const parts = location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
+  const [seg0, seg1, seg2] = parts;
+  closeMobileNav();
+  try {
+    if (!seg0 || seg0 === "dashboard") { updateActiveNav("dashboard"); await renderDashboard(); }
+    else if (seg0 === "templates") {
+      if (seg1 === "new") { updateActiveNav("templates"); await renderTemplateEditor(null); }
+      else if (seg1) { updateActiveNav("templates"); await renderTemplateEditor(seg1); }
+      else { updateActiveNav("templates"); await renderTemplatesList(); }
+    } else if (seg0 === "inspections") {
+      if (seg1 === "new") { updateActiveNav("new-inspection"); await renderNewInspection(); }
+      else if (seg1 && seg2 === "run") { updateActiveNav("new-inspection"); await renderInspectionRun(seg1); }
+      else if (seg1) { updateActiveNav("inspections"); await renderInspectionReport(seg1); }
+      else { updateActiveNav("inspections"); await renderInspectionsHistory(); }
+    } else if (seg0 === "issues") { updateActiveNav("issues"); await renderIssues(); }
+    else if (seg0 === "settings") { updateActiveNav("settings"); await renderSettings(); }
+    else { contentEl.innerHTML = `<div class="empty-state"><h3>Page not found</h3><p><a href="#/dashboard">Go to dashboard</a></p></div>`; }
+  } catch (e) {
+    console.error(e);
+    contentEl.innerHTML = `<div class="empty-state"><h3>Something went wrong</h3><p>${escapeHtml(e.message || String(e))}</p></div>`;
+  }
+  window.scrollTo(0, 0);
+}
+
+/* ---------------- Dashboard ---------------- */
+
+function renderInspectionListItem(insp) {
+  const score = insp.status === "completed" ? scoreFor(insp.items) : null;
+  return `
+    <a class="list-item" href="#/inspections/${insp.id}${insp.status === "in-progress" ? "/run" : ""}">
+      <div class="list-item-main">
+        <div class="list-item-title">${escapeHtml(insp.title)}</div>
+        <div class="list-item-sub">${escapeHtml(insp.templateName)} · ${escapeHtml(insp.inspector || "Unassigned")} · ${formatDate(insp.date)}</div>
+      </div>
+      <div style="display:flex; gap:8px; align-items:center; flex-shrink:0;">
+        ${score !== null ? `<span class="badge ${score >= 90 ? "badge-success" : score >= 70 ? "badge-warning" : "badge-danger"}">${score}%</span>` : ""}
+        ${statusBadge(insp.status)}
+      </div>
+    </a>`;
+}
+
+async function renderDashboard() {
+  const [templates, inspections, issues] = await Promise.all([Store.getTemplates(), Store.getInspections(), Store.getIssues()]);
+  const completed = inspections.filter((i) => i.status === "completed");
+  let pass = 0, fail = 0;
+  completed.forEach((i) => i.items.forEach((it) => {
+    if (it.result === "pass") pass++; else if (it.result === "fail") fail++;
+  }));
+  const scored = pass + fail;
+  const passRate = scored > 0 ? Math.round((pass / scored) * 100) : null;
+  const openIssues = issues.filter((i) => i.status === "open");
+  const now = new Date();
+  const thisMonth = inspections.filter((i) => {
+    const d = new Date(i.createdAt);
+    return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+  });
+  const recentInspections = inspections.slice(0, 5);
+  const topIssues = openIssues.slice().sort((a, b) => (b.severity === "high") - (a.severity === "high")).slice(0, 5);
+
+  contentEl.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h1>Dashboard</h1>
+        <p>Overview of your safety inspection program.</p>
+      </div>
+      <div style="display:flex; gap:8px;">
+        <a class="btn" href="#/templates/new">+ New Template</a>
+        <a class="btn btn-primary" href="#/inspections/new">+ New Inspection</a>
+      </div>
+    </div>
+
+    <div class="grid-stats">
+      <div class="card stat-card">
+        <div class="stat-label">Open Issues</div>
+        <div class="stat-value" style="color:${openIssues.length ? "var(--danger)" : "var(--text)"}">${openIssues.length}</div>
+        <div class="stat-sub">Needing follow-up</div>
+      </div>
+      <div class="card stat-card">
+        <div class="stat-label">Pass Rate</div>
+        <div class="stat-value">${passRate === null ? "—" : passRate + "%"}</div>
+        <div class="stat-sub">Across completed inspections</div>
+      </div>
+      <div class="card stat-card">
+        <div class="stat-label">Inspections This Month</div>
+        <div class="stat-value">${thisMonth.length}</div>
+        <div class="stat-sub">${inspections.length} total</div>
+      </div>
+      <div class="card stat-card">
+        <div class="stat-label">Templates</div>
+        <div class="stat-value">${templates.length}</div>
+        <div class="stat-sub">Checklist types</div>
+      </div>
+    </div>
+
+    <div class="two-col">
+      <div>
+        <div class="section-title">Recent Inspections</div>
+        ${recentInspections.length ? `<div class="list">${recentInspections.map(renderInspectionListItem).join("")}</div>`
+          : `<div class="empty-state"><h3>No inspections yet</h3><p>Start your first inspection to see it here.</p><a class="btn btn-primary" style="margin-top:10px" href="#/inspections/new">+ New Inspection</a></div>`}
+      </div>
+      <div class="sticky-side">
+        <div class="section-title" style="margin-top:0">Open Issues</div>
+        ${topIssues.length ? `<div class="list">${topIssues.map((iss) => `
+          <a class="list-item" href="#/issues" style="cursor:pointer">
+            <div class="list-item-main">
+              <div class="list-item-title">${escapeHtml(iss.itemText)}</div>
+              <div class="list-item-sub">${escapeHtml(iss.inspectionTitle)} · ${formatDate(iss.createdAt)}</div>
+            </div>
+            ${severityBadge(iss.severity)}
+          </a>`).join("")}</div>`
+          : `<div class="empty-state" style="padding:24px 14px;"><p style="margin:0">No open issues 🎉</p></div>`}
+      </div>
+    </div>
+  `;
+}
+
+/* ---------------- Templates List ---------------- */
+
+async function renderTemplatesList() {
+  const templates = await Store.getTemplates();
+  contentEl.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h1>Templates</h1>
+        <p>Checklist templates used to run inspections.</p>
+      </div>
+      <a class="btn btn-primary" href="#/templates/new">+ New Template</a>
+    </div>
+    ${templates.length ? `<div class="list">${templates.map((t) => `
+      <div class="list-item">
+        <div class="list-item-main">
+          <div class="list-item-title">${escapeHtml(t.name)}</div>
+          <div class="list-item-sub">${escapeHtml(t.description || "No description")} · ${t.items.length} item${t.items.length === 1 ? "" : "s"}</div>
+        </div>
+        <div class="list-item-actions">
+          <a class="btn btn-sm btn-primary" href="#/inspections/new" data-start-tpl="${t.id}">Start</a>
+          <a class="btn btn-sm" href="#/templates/${t.id}">Edit</a>
+          <button class="btn btn-sm btn-ghost" data-delete-tpl="${t.id}" title="Delete template" aria-label="Delete template">🗑</button>
+        </div>
+      </div>`).join("")}</div>`
+      : `<div class="empty-state"><h3>No templates yet</h3><p>Create a checklist template to start running inspections.</p><a class="btn btn-primary" style="margin-top:10px" href="#/templates/new">+ New Template</a></div>`}
+  `;
+
+  contentEl.querySelectorAll("[data-delete-tpl]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.preventDefault();
+      const id = btn.dataset.deleteTpl;
+      const tpl = templates.find((t) => t.id === id);
+      confirmDialog({
+        title: "Delete template?",
+        message: `Delete "${tpl ? tpl.name : "this template"}"? Past inspections that used it will be kept.`,
+        confirmText: "Delete",
+        onConfirm: async () => {
+          try { await Store.deleteTemplate(id); showToast("Template deleted"); render(); }
+          catch (err) { console.error(err); showToast("Delete failed — check your connection"); }
+        },
+      });
+    });
+  });
+  contentEl.querySelectorAll("[data-start-tpl]").forEach((a) => {
+    a.addEventListener("click", (e) => {
+      e.preventDefault();
+      sessionStorage.setItem("preselectTpl", a.dataset.startTpl);
+      goto("#/inspections/new");
+    });
+  });
+}
+
+/* ---------------- Template Editor ---------------- */
+
+let templateDraft = null;
+
+function freshTemplateItem(text = "") {
+  return { id: uid("item"), text };
+}
+
+async function renderTemplateEditor(id) {
+  let existing = null;
+  if (id) {
+    existing = await Store.getTemplate(id);
+    if (!existing) {
+      contentEl.innerHTML = `<div class="empty-state"><h3>Template not found</h3><a href="#/templates">Back to templates</a></div>`;
+      return;
+    }
+  }
+  templateDraft = existing
+    ? JSON.parse(JSON.stringify(existing))
+    : { id: null, name: "", description: "", items: [freshTemplateItem()] };
+
+  contentEl.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h1>${existing ? "Edit Template" : "New Template"}</h1>
+        <p>Define the checklist items inspectors will go through.</p>
+      </div>
+    </div>
+    <div class="card card-pad" style="max-width:680px">
+      <div class="form-group">
+        <label for="tplName">Template name</label>
+        <input type="text" id="tplName" placeholder="e.g. Fire Safety Equipment Check" value="${escapeHtml(templateDraft.name)}" />
+      </div>
+      <div class="form-group">
+        <label for="tplDesc">Description</label>
+        <textarea id="tplDesc" placeholder="What does this checklist cover?">${escapeHtml(templateDraft.description)}</textarea>
+      </div>
+      <div class="form-group">
+        <label>Checklist items</label>
+        <div id="templateItemsList"></div>
+        <button class="btn btn-sm" id="addItemBtn" type="button">+ Add Item</button>
+      </div>
+      <div class="modal-actions" style="justify-content:flex-start; margin-top:22px;">
+        <button class="btn btn-primary" id="saveTplBtn">Save Template</button>
+        <a class="btn" href="#/templates">Cancel</a>
+        ${existing ? `<button class="btn btn-ghost" id="deleteTplBtn" style="margin-left:auto; color:var(--danger)">Delete</button>` : ""}
+      </div>
+    </div>
+  `;
+
+  renderTemplateItemsRows();
+  document.getElementById("tplName").addEventListener("input", (e) => { templateDraft.name = e.target.value; });
+  document.getElementById("tplDesc").addEventListener("input", (e) => { templateDraft.description = e.target.value; });
+  document.getElementById("addItemBtn").addEventListener("click", () => {
+    templateDraft.items.push(freshTemplateItem());
+    renderTemplateItemsRows();
+  });
+  document.getElementById("saveTplBtn").addEventListener("click", async () => {
+    const name = templateDraft.name.trim();
+    if (!name) { showToast("Please enter a template name"); document.getElementById("tplName").focus(); return; }
+    templateDraft.items = templateDraft.items.map((it) => ({ ...it, text: it.text.trim() })).filter((it) => it.text);
+    if (!templateDraft.items.length) { showToast("Add at least one checklist item"); return; }
+    templateDraft.name = name;
+    templateDraft.description = templateDraft.description.trim();
+    const btn = document.getElementById("saveTplBtn");
+    btn.disabled = true;
+    try {
+      await Store.saveTemplate(templateDraft);
+      showToast("Template saved");
+      goto("#/templates");
+    } catch (err) {
+      console.error(err);
+      showToast("Save failed — check your connection");
+      btn.disabled = false;
+    }
+  });
+  const delBtn = document.getElementById("deleteTplBtn");
+  if (delBtn) {
+    delBtn.addEventListener("click", () => {
+      confirmDialog({
+        title: "Delete template?",
+        message: `Delete "${templateDraft.name}"? Past inspections that used it will be kept.`,
+        onConfirm: async () => {
+          try { await Store.deleteTemplate(id); showToast("Template deleted"); goto("#/templates"); }
+          catch (err) { console.error(err); showToast("Delete failed — check your connection"); }
+        },
+      });
+    });
+  }
+}
+
+function renderTemplateItemsRows() {
+  const container = document.getElementById("templateItemsList");
+  if (!container) return;
+  container.innerHTML = templateDraft.items.map((it, idx) => `
+    <div class="item-row" data-idx="${idx}">
+      <div style="display:flex; flex-direction:column; gap:2px; padding-top:2px;">
+        <button class="btn btn-sm btn-ghost" data-move="up" data-idx="${idx}" ${idx === 0 ? "disabled" : ""} title="Move up" style="padding:2px 6px;">↑</button>
+        <button class="btn btn-sm btn-ghost" data-move="down" data-idx="${idx}" ${idx === templateDraft.items.length - 1 ? "disabled" : ""} title="Move down" style="padding:2px 6px;">↓</button>
+      </div>
+      <input type="text" data-item-text data-idx="${idx}" value="${escapeHtml(it.text)}" placeholder="Checklist item text" />
+      <button class="btn btn-sm btn-ghost" data-remove-idx="${idx}" title="Remove item" style="color:var(--danger)">✕</button>
+    </div>
+  `).join("");
+
+  container.querySelectorAll("[data-item-text]").forEach((input) => {
+    input.addEventListener("input", () => {
+      templateDraft.items[+input.dataset.idx].text = input.value;
+    });
+  });
+  container.querySelectorAll("[data-remove-idx]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      templateDraft.items.splice(+btn.dataset.removeIdx, 1);
+      renderTemplateItemsRows();
+    });
+  });
+  container.querySelectorAll("[data-move]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const idx = +btn.dataset.idx;
+      const dir = btn.dataset.move === "up" ? -1 : 1;
+      const swapWith = idx + dir;
+      if (swapWith < 0 || swapWith >= templateDraft.items.length) return;
+      [templateDraft.items[idx], templateDraft.items[swapWith]] = [templateDraft.items[swapWith], templateDraft.items[idx]];
+      renderTemplateItemsRows();
+    });
+  });
+}
+
+/* ---------------- New Inspection picker ---------------- */
+
+async function renderNewInspection() {
+  const [templates, inspectors, locations] = await Promise.all([Store.getTemplates(), Store.getInspectors(), Store.getLocations()]);
+  if (!templates.length) {
+    contentEl.innerHTML = `<div class="page-header"><div><h1>New Inspection</h1></div></div>
+      <div class="empty-state"><h3>No templates yet</h3><p>Create a checklist template first.</p><a class="btn btn-primary" style="margin-top:10px" href="#/templates/new">+ New Template</a></div>`;
+    return;
+  }
+  const preselect = sessionStorage.getItem("preselectTpl") || templates[0].id;
+  const today = new Date().toISOString().slice(0, 10);
+  contentEl.innerHTML = `
+    <div class="page-header"><div><h1>New Inspection</h1><p>Choose a checklist and enter the inspection details.</p></div></div>
+    <div class="card card-pad" style="max-width:560px">
+      <div class="form-group">
+        <label for="niTemplate">Checklist template</label>
+        <select id="niTemplate">
+          ${templates.map((t) => `<option value="${t.id}" ${t.id === preselect ? "selected" : ""}>${escapeHtml(t.name)} (${t.items.length} items)</option>`).join("")}
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="niTitle">Inspection title</label>
+        <input type="text" id="niTitle" placeholder="e.g. Warehouse A — July Fire Check" />
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="niInspector">Inspector name</label>
+          <select id="niInspector">${selectOptionsHtml(inspectors, "")}</select>
+        </div>
+        <div class="form-group">
+          <label for="niDate">Date</label>
+          <input type="date" id="niDate" value="${today}" />
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="niLocation">Location</label>
+        <select id="niLocation">${selectOptionsHtml(locations, "")}</select>
+      </div>
+      <div class="modal-actions" style="justify-content:flex-start; margin-top:22px;">
+        <button class="btn btn-primary" id="startInspectionBtn">Start Inspection</button>
+        <a class="btn" href="#/dashboard">Cancel</a>
+      </div>
+    </div>
+  `;
+  sessionStorage.removeItem("preselectTpl");
+
+  const templateSelect = document.getElementById("niTemplate");
+  const titleInput = document.getElementById("niTitle");
+  function suggestTitle() {
+    const tpl = templates.find((t) => t.id === templateSelect.value);
+    if (tpl && !titleInput.dataset.touched) titleInput.value = `${tpl.name} — ${formatDate(new Date().toISOString())}`;
+  }
+  suggestTitle();
+  templateSelect.addEventListener("change", suggestTitle);
+  titleInput.addEventListener("input", () => { titleInput.dataset.touched = "1"; });
+  wirePickOrAddSelect(document.getElementById("niInspector"), "New inspector name:", Store.addInspector, () => {});
+  wirePickOrAddSelect(document.getElementById("niLocation"), "New location:", Store.addLocation, () => {});
+
+  document.getElementById("startInspectionBtn").addEventListener("click", async () => {
+    const tpl = templates.find((t) => t.id === templateSelect.value);
+    if (!tpl) { showToast("Please choose a template"); return; }
+    const title = titleInput.value.trim() || tpl.name;
+    const inspector = document.getElementById("niInspector").value.trim();
+    const location_ = document.getElementById("niLocation").value.trim();
+    const date = document.getElementById("niDate").value || new Date().toISOString().slice(0, 10);
+
+    const insp = {
+      id: null,
+      templateId: tpl.id,
+      templateName: tpl.name,
+      title,
+      inspector,
+      location: location_,
+      date,
+      status: "in-progress",
+      items: tpl.items.map((it) => ({ id: it.id, text: it.text, result: null, notes: "", photos: [] })),
+      createdAt: nowIso(),
+      completedAt: null,
+    };
+    const btn = document.getElementById("startInspectionBtn");
+    btn.disabled = true;
+    try {
+      await Store.saveInspection(insp);
+      showToast("Inspection started");
+      goto(`#/inspections/${insp.id}/run`);
+    } catch (err) {
+      console.error(err);
+      showToast("Could not start inspection — check your connection");
+      btn.disabled = false;
+    }
+  });
+}
+
+/* ---------------- Inspection Run (fill out checklist) ---------------- */
+
+let saveTimer = null;
+
+function scheduleInspectionSave(insp) {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    Store.saveInspection(insp).catch((err) => { console.error(err); showToast("Save failed — check your connection"); });
+  }, 700);
+}
+
+async function flushInspectionSave(insp) {
+  clearTimeout(saveTimer);
+  saveTimer = null;
+  await Store.saveInspection(insp);
+}
+
+async function renderInspectionRun(id) {
+  const [insp, inspectors, locations] = await Promise.all([Store.getInspection(id), Store.getInspectors(), Store.getLocations()]);
+  if (!insp) { contentEl.innerHTML = `<div class="empty-state"><h3>Inspection not found</h3><a href="#/inspections">Back to history</a></div>`; return; }
+  const answered = insp.items.filter((it) => it.result).length;
+  const pct = insp.items.length ? Math.round((answered / insp.items.length) * 100) : 0;
+
+  contentEl.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h1>${escapeHtml(insp.title)}</h1>
+        <p>${escapeHtml(insp.templateName)} · ${statusBadge(insp.status)}</p>
+      </div>
+      <div style="display:flex; gap:8px;">
+        <button class="btn" id="saveExitBtn">Save &amp; Exit</button>
+        <button class="btn btn-primary" id="completeBtn">Complete Inspection</button>
+      </div>
+    </div>
+
+    <div class="card card-pad" style="margin-bottom:20px;">
+      <div class="form-row">
+        <div class="form-group" style="margin-bottom:0">
+          <label for="riInspector">Inspector</label>
+          <select id="riInspector">${selectOptionsHtml(inspectors, insp.inspector)}</select>
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label for="riLocation">Location</label>
+          <select id="riLocation">${selectOptionsHtml(locations, insp.location)}</select>
+        </div>
+      </div>
+      <div class="form-group" style="margin-bottom:0; margin-top:14px; max-width:220px;">
+        <label for="riDate">Date</label>
+        <input type="date" id="riDate" value="${escapeHtml(insp.date)}" />
+      </div>
+    </div>
+
+    <div class="progress-bar"><div class="progress-bar-fill" id="progressFill" style="width:${pct}%"></div></div>
+    <p class="hint" id="progressLabel" style="margin-top:-14px; margin-bottom:16px;">${answered} of ${insp.items.length} items answered</p>
+
+    <div id="checklistItems"></div>
+
+    <input type="file" id="photoInput" accept="image/*" capture="environment" multiple hidden />
+  `;
+
+  renderChecklistItems(insp);
+
+  wirePickOrAddSelect(document.getElementById("riInspector"), "New inspector name:", Store.addInspector, (val) => { insp.inspector = val; scheduleInspectionSave(insp); });
+  wirePickOrAddSelect(document.getElementById("riLocation"), "New location:", Store.addLocation, (val) => { insp.location = val; scheduleInspectionSave(insp); });
+  document.getElementById("riDate").addEventListener("input", (e) => { insp.date = e.target.value; scheduleInspectionSave(insp); });
+
+  document.getElementById("photoInput").addEventListener("change", async (e) => {
+    const files = Array.from(e.target.files || []);
+    const itemId = e.target.dataset.forItem;
+    const item = insp.items.find((i) => i.id === itemId);
+    if (!item || !files.length) return;
+    for (const file of files) {
+      try {
+        showToast("Uploading photo…", 1500);
+        const blob = await compressImageToBlob(file);
+        const photo = await Store.uploadPhoto(insp.id, itemId, blob);
+        item.photos.push(photo);
+      } catch (err) {
+        console.error(err);
+        showToast("Photo upload failed");
+      }
+    }
+    renderChecklistItems(insp);
+  });
+
+  document.getElementById("saveExitBtn").addEventListener("click", async () => {
+    const btn = document.getElementById("saveExitBtn");
+    btn.disabled = true;
+    try {
+      await flushInspectionSave(insp);
+      showToast("Progress saved");
+      goto("#/inspections");
+    } catch (err) {
+      console.error(err);
+      showToast("Save failed — check your connection");
+      btn.disabled = false;
+    }
+  });
+
+  document.getElementById("completeBtn").addEventListener("click", async () => {
+    const unanswered = insp.items.filter((it) => !it.result).length;
+    if (unanswered > 0) {
+      showToast(`${unanswered} item${unanswered === 1 ? "" : "s"} still need${unanswered === 1 ? "s" : ""} a response`);
+      return;
+    }
+    const btn = document.getElementById("completeBtn");
+    btn.disabled = true;
+    insp.status = "completed";
+    insp.completedAt = nowIso();
+    try {
+      await flushInspectionSave(insp);
+      await Store.syncIssuesFromInspection(insp);
+      const failCount = insp.items.filter((it) => it.result === "fail").length;
+      showToast(failCount ? `Inspection completed — ${failCount} issue${failCount === 1 ? "" : "s"} logged` : "Inspection completed — all clear");
+      goto(`#/inspections/${insp.id}`);
+    } catch (err) {
+      console.error(err);
+      showToast("Could not complete inspection — check your connection");
+      insp.status = "in-progress";
+      insp.completedAt = null;
+      btn.disabled = false;
+    }
+  });
+}
+
+function renderChecklistItems(insp) {
+  const container = document.getElementById("checklistItems");
+  if (!container) return;
+  container.innerHTML = insp.items.map((it) => `
+    <div class="checklist-item">
+      <div class="checklist-item-head">
+        <div class="checklist-item-text">${escapeHtml(it.text)}</div>
+      </div>
+      <div class="result-toggles">
+        <button class="toggle-btn pass ${it.result === "pass" ? "active" : ""}" data-result="pass" data-item="${it.id}">✓ Pass</button>
+        <button class="toggle-btn fail ${it.result === "fail" ? "active" : ""}" data-result="fail" data-item="${it.id}">✕ Fail</button>
+        <button class="toggle-btn na ${it.result === "na" ? "active" : ""}" data-result="na" data-item="${it.id}">— N/A</button>
+      </div>
+      <textarea data-notes data-item="${it.id}" placeholder="Notes (optional)">${escapeHtml(it.notes)}</textarea>
+      <div class="photo-row" data-photo-row="${it.id}">
+        ${it.photos.map((p) => `
+          <div class="photo-thumb">
+            <img src="${p.url}" data-photo-view="${it.id}" />
+            <button data-photo-remove="${it.id}" data-photo-id="${p.photoId}" title="Remove photo">✕</button>
+          </div>`).join("")}
+        <div class="photo-add" data-photo-add="${it.id}" title="Add photo">📷</div>
+      </div>
+    </div>
+  `).join("");
+
+  const progressFill = document.getElementById("progressFill");
+  const progressLabel = document.getElementById("progressLabel");
+  const answered = insp.items.filter((it) => it.result).length;
+  if (progressFill) progressFill.style.width = `${insp.items.length ? Math.round((answered / insp.items.length) * 100) : 0}%`;
+  if (progressLabel) progressLabel.textContent = `${answered} of ${insp.items.length} items answered`;
+
+  container.querySelectorAll("[data-result]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const item = insp.items.find((i) => i.id === btn.dataset.item);
+      item.result = item.result === btn.dataset.result ? null : btn.dataset.result;
+      renderChecklistItems(insp);
+      try { await Store.saveInspection(insp); } catch (err) { console.error(err); showToast("Save failed — check your connection"); }
+    });
+  });
+  container.querySelectorAll("[data-notes]").forEach((ta) => {
+    ta.addEventListener("input", () => {
+      const item = insp.items.find((i) => i.id === ta.dataset.item);
+      item.notes = ta.value;
+      scheduleInspectionSave(insp);
+    });
+  });
+  container.querySelectorAll("[data-photo-add]").forEach((el) => {
+    el.addEventListener("click", () => {
+      const input = document.getElementById("photoInput");
+      input.dataset.forItem = el.dataset.photoAdd;
+      input.value = "";
+      input.click();
+    });
+  });
+  container.querySelectorAll("[data-photo-remove]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const item = insp.items.find((i) => i.id === btn.dataset.photoRemove);
+      const photoId = btn.dataset.photoId;
+      item.photos = item.photos.filter((p) => p.photoId !== photoId);
+      renderChecklistItems(insp);
+      try { await Store.deletePhoto(photoId); } catch (err) { console.error(err); showToast("Could not remove photo"); }
+    });
+  });
+  container.querySelectorAll("[data-photo-view]").forEach((img) => {
+    img.addEventListener("click", () => window.open(img.src, "_blank"));
+  });
+}
+
+/* ---------------- Inspection Report (read-only) ---------------- */
+
+async function renderInspectionReport(id) {
+  const insp = await Store.getInspection(id);
+  if (!insp) { contentEl.innerHTML = `<div class="empty-state"><h3>Inspection not found</h3><a href="#/inspections">Back to history</a></div>`; return; }
+
+  if (insp.status === "in-progress") {
+    contentEl.innerHTML = `
+      <div class="page-header">
+        <div><h1>${escapeHtml(insp.title)}</h1><p>${escapeHtml(insp.templateName)} · ${statusBadge(insp.status)}</p></div>
+        <a class="btn btn-primary" href="#/inspections/${insp.id}/run">Continue Inspection</a>
+      </div>
+      <div class="empty-state"><h3>Still in progress</h3><p>This inspection hasn't been completed yet.</p></div>
+    `;
+    return;
+  }
+
+  const pass = insp.items.filter((it) => it.result === "pass").length;
+  const fail = insp.items.filter((it) => it.result === "fail").length;
+  const na = insp.items.filter((it) => it.result === "na").length;
+  const score = scoreFor(insp.items);
+
+  contentEl.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h1>${escapeHtml(insp.title)}</h1>
+        <p>${escapeHtml(insp.templateName)} · ${escapeHtml(insp.inspector || "Unassigned")} · ${escapeHtml(insp.location || "No location")} · ${formatDate(insp.date)}</p>
+      </div>
+      <div style="display:flex; gap:8px;">
+        <button class="btn" id="printBtn">🖨 Print / Save PDF</button>
+        <button class="btn btn-ghost" id="deleteInspBtn" style="color:var(--danger)">Delete</button>
+      </div>
+    </div>
+
+    <div class="grid-stats">
+      <div class="card stat-card"><div class="stat-label">Score</div><div class="stat-value">${score === null ? "—" : score + "%"}</div></div>
+      <div class="card stat-card"><div class="stat-label">Passed</div><div class="stat-value" style="color:var(--success)">${pass}</div></div>
+      <div class="card stat-card"><div class="stat-label">Failed</div><div class="stat-value" style="color:var(--danger)">${fail}</div></div>
+      <div class="card stat-card"><div class="stat-label">N/A</div><div class="stat-value">${na}</div></div>
+    </div>
+
+    <div class="card card-pad">
+      ${insp.items.map((it) => `
+        <div style="padding:14px 0; border-bottom:1px solid var(--border);">
+          <div style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start;">
+            <div style="font-weight:600; font-size:14.5px;">${escapeHtml(it.text)}</div>
+            ${resultBadge(it.result)}
+          </div>
+          ${it.notes ? `<div class="hint" style="margin-top:6px;">${escapeHtml(it.notes)}</div>` : ""}
+          ${it.photos && it.photos.length ? `<div class="photo-row">${it.photos.map((p) => `<div class="photo-thumb"><img src="${p.url}" /></div>`).join("")}</div>` : ""}
+        </div>
+      `).join("")}
+    </div>
+  `;
+
+  const printBtn = document.getElementById("printBtn");
+  if (printBtn) printBtn.addEventListener("click", () => window.print());
+  const delBtn = document.getElementById("deleteInspBtn");
+  if (delBtn) {
+    delBtn.addEventListener("click", () => {
+      confirmDialog({
+        title: "Delete inspection?",
+        message: "This will also remove any issues logged from this inspection.",
+        onConfirm: async () => {
+          try { await Store.deleteInspection(id); showToast("Inspection deleted"); goto("#/inspections"); }
+          catch (err) { console.error(err); showToast("Delete failed — check your connection"); }
+        },
+      });
+    });
+  }
+}
+
+/* ---------------- Inspections History ---------------- */
+
+let historyFilters = { search: "", status: "all", template: "all" };
+
+async function renderInspectionsHistory() {
+  const [all, templates] = await Promise.all([Store.getInspections(), Store.getTemplates()]);
+  const q = historyFilters.search.trim().toLowerCase();
+  const filtered = all.filter((i) => {
+    if (historyFilters.status !== "all" && i.status !== historyFilters.status) return false;
+    if (historyFilters.template !== "all" && i.templateId !== historyFilters.template) return false;
+    if (q && !(`${i.title} ${i.inspector} ${i.location}`.toLowerCase().includes(q))) return false;
+    return true;
+  });
+
+  contentEl.innerHTML = `
+    <div class="page-header">
+      <div><h1>Inspection History</h1><p>${all.length} total inspection${all.length === 1 ? "" : "s"}</p></div>
+      <a class="btn btn-primary" href="#/inspections/new">+ New Inspection</a>
+    </div>
+    <div class="toolbar">
+      <input type="search" id="histSearch" placeholder="Search by title, inspector, location…" value="${escapeHtml(historyFilters.search)}" style="max-width:260px" />
+      <select id="histStatus" style="max-width:160px">
+        <option value="all" ${historyFilters.status === "all" ? "selected" : ""}>All statuses</option>
+        <option value="completed" ${historyFilters.status === "completed" ? "selected" : ""}>Completed</option>
+        <option value="in-progress" ${historyFilters.status === "in-progress" ? "selected" : ""}>In Progress</option>
+      </select>
+      <select id="histTemplate" style="max-width:220px">
+        <option value="all">All templates</option>
+        ${templates.map((t) => `<option value="${t.id}" ${historyFilters.template === t.id ? "selected" : ""}>${escapeHtml(t.name)}</option>`).join("")}
+      </select>
+    </div>
+    ${filtered.length ? `<div class="list">${filtered.map(renderInspectionListItem).join("")}</div>`
+      : `<div class="empty-state"><h3>No inspections match</h3><p>Try adjusting your filters.</p></div>`}
+  `;
+
+  document.getElementById("histSearch").addEventListener("input", (e) => { historyFilters.search = e.target.value; render(); });
+  document.getElementById("histStatus").addEventListener("change", (e) => { historyFilters.status = e.target.value; render(); });
+  document.getElementById("histTemplate").addEventListener("change", (e) => { historyFilters.template = e.target.value; render(); });
+}
+
+/* ---------------- Issues ---------------- */
+
+let issuesTab = "open";
+
+async function renderIssues() {
+  const all = await Store.getIssues();
+  const open = all.filter((i) => i.status === "open");
+  const resolved = all.filter((i) => i.status === "resolved");
+  const shown = issuesTab === "open" ? open : issuesTab === "resolved" ? resolved : all;
+
+  contentEl.innerHTML = `
+    <div class="page-header">
+      <div><h1>Issues</h1><p>Failed items from inspections, tracked until resolved.</p></div>
+    </div>
+    <div class="tabs">
+      <button class="tab-btn ${issuesTab === "open" ? "active" : ""}" data-tab="open">Open (${open.length})</button>
+      <button class="tab-btn ${issuesTab === "resolved" ? "active" : ""}" data-tab="resolved">Resolved (${resolved.length})</button>
+      <button class="tab-btn ${issuesTab === "all" ? "active" : ""}" data-tab="all">All (${all.length})</button>
+    </div>
+    ${shown.length ? `<div class="list">${shown.map((iss) => `
+      <div class="card card-pad">
+        <div style="display:flex; justify-content:space-between; gap:12px; align-items:flex-start;">
+          <div style="min-width:0;">
+            <div class="list-item-title">${escapeHtml(iss.itemText)}</div>
+            <div class="list-item-sub">
+              <a href="#/inspections/${iss.inspectionId}">${escapeHtml(iss.inspectionTitle)}</a>
+              ${iss.location ? " · " + escapeHtml(iss.location) : ""} · ${formatDate(iss.createdAt)}
+            </div>
+            ${iss.description ? `<div class="hint" style="margin-top:6px;">${escapeHtml(iss.description)}</div>` : ""}
+            ${iss.photo ? `<div class="photo-row"><div class="photo-thumb"><img src="${iss.photo}"/></div></div>` : ""}
+            ${iss.status === "resolved" && iss.resolutionNotes ? `<div class="hint" style="margin-top:6px; color:var(--success)">Resolution: ${escapeHtml(iss.resolutionNotes)}</div>` : ""}
+          </div>
+          <div style="display:flex; flex-direction:column; gap:8px; align-items:flex-end; flex-shrink:0;">
+            <select data-severity="${iss.id}" style="width:auto; padding:5px 8px; font-size:12.5px;">
+              <option value="low" ${iss.severity === "low" ? "selected" : ""}>Low</option>
+              <option value="medium" ${iss.severity === "medium" ? "selected" : ""}>Medium</option>
+              <option value="high" ${iss.severity === "high" ? "selected" : ""}>High</option>
+            </select>
+            ${iss.status === "open"
+              ? `<button class="btn btn-sm btn-primary" data-resolve="${iss.id}">Mark Resolved</button>`
+              : `<button class="btn btn-sm" data-reopen="${iss.id}">Reopen</button>`}
+          </div>
+        </div>
+      </div>`).join("")}</div>`
+      : `<div class="empty-state"><h3>Nothing here</h3><p>${issuesTab === "open" ? "No open issues right now." : "No issues in this view."}</p></div>`}
+  `;
+
+  contentEl.querySelectorAll("[data-tab]").forEach((btn) => {
+    btn.addEventListener("click", () => { issuesTab = btn.dataset.tab; render(); });
+  });
+  contentEl.querySelectorAll("[data-severity]").forEach((sel) => {
+    sel.addEventListener("change", async () => {
+      const issue = all.find((i) => i.id === sel.dataset.severity);
+      issue.severity = sel.value;
+      try { await Store.saveIssue(issue); } catch (err) { console.error(err); showToast("Save failed — check your connection"); }
+    });
+  });
+  contentEl.querySelectorAll("[data-resolve]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const issue = all.find((i) => i.id === btn.dataset.resolve);
+      openResolveModal(issue);
+    });
+  });
+  contentEl.querySelectorAll("[data-reopen]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const issue = all.find((i) => i.id === btn.dataset.reopen);
+      issue.status = "open";
+      issue.resolvedAt = null;
+      try { await Store.saveIssue(issue); showToast("Issue reopened"); render(); }
+      catch (err) { console.error(err); showToast("Update failed — check your connection"); }
+    });
+  });
+}
+
+function openResolveModal(issue) {
+  const backdrop = document.createElement("div");
+  backdrop.className = "modal-backdrop";
+  backdrop.innerHTML = `
+    <div class="modal">
+      <h3>Resolve issue</h3>
+      <p class="hint" style="margin-top:-6px;">${escapeHtml(issue.itemText)}</p>
+      <div class="form-group">
+        <label for="resolveNotes">Resolution notes</label>
+        <textarea id="resolveNotes" placeholder="What was done to fix this?"></textarea>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" id="resolveCancel">Cancel</button>
+        <button class="btn btn-primary" id="resolveConfirm">Mark Resolved</button>
+      </div>
+    </div>`;
+  document.body.appendChild(backdrop);
+  backdrop.addEventListener("click", (e) => { if (e.target === backdrop) backdrop.remove(); });
+  backdrop.querySelector("#resolveCancel").onclick = () => backdrop.remove();
+  backdrop.querySelector("#resolveConfirm").onclick = async () => {
+    issue.status = "resolved";
+    issue.resolvedAt = nowIso();
+    issue.resolutionNotes = backdrop.querySelector("#resolveNotes").value.trim();
+    try {
+      await Store.saveIssue(issue);
+      backdrop.remove();
+      showToast("Issue resolved");
+      render();
+    } catch (err) {
+      console.error(err);
+      showToast("Update failed — check your connection");
+    }
+  };
+}
+
+/* ---------------- init ---------------- */
+
+document.addEventListener("DOMContentLoaded", boot);

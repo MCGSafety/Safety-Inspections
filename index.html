@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SafeCheck — Safety Inspections</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <button class="nav-toggle" id="navToggle" aria-label="Toggle navigation">☰</button>
+      <div class="brand">
+        <span class="brand-mark">✓</span>
+        <span class="brand-name">SafeCheck</span>
+      </div>
+      <nav class="topnav">
+        <a href="#/dashboard" data-route="dashboard">Dashboard</a>
+        <a href="#/inspections/new" data-route="new-inspection">New Inspection</a>
+        <a href="#/inspections" data-route="inspections">History</a>
+        <a href="#/issues" data-route="issues">Issues</a>
+        <a href="#/templates" data-route="templates">Templates</a>
+        <a href="#/settings" data-route="settings">Settings</a>
+      </nav>
+    </header>
+
+    <main id="app-content" class="content"></main>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="config.js"></script>
+  <script src="storage.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
