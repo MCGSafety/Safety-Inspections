@@ -571,7 +571,7 @@ async function renderLocationsList() {
   const [locations, inspections, issues] = await Promise.all([Store.getLocations(), Store.getInspections(), Store.getIssues()]);
   contentEl.innerHTML = `
     <div class="page-header">
-      <div><h1>Locations</h1><p>A dashboard for each site.</p></div>
+      <div><h1>Sites</h1><p>A dashboard for each site.</p></div>
     </div>
     ${locations.length ? `<div class="list">${locations.map((loc) => {
       const locInsp = inspections.filter((i) => i.location === loc.name);
@@ -585,7 +585,7 @@ async function renderLocationsList() {
           ${locOpenIssues.length ? `<span class="badge badge-danger">${locOpenIssues.length} open issue${locOpenIssues.length === 1 ? "" : "s"}</span>` : `<span class="badge badge-success">All clear</span>`}
         </a>`;
     }).join("")}</div>`
-      : `<div class="empty-state"><h3>No locations yet</h3><p>Locations are added from the Location dropdown when starting an inspection.</p></div>`}
+      : `<div class="empty-state"><h3>No sites yet</h3><p>Sites are added from the Site dropdown when starting an inspection.</p></div>`}
   `;
 }
 
@@ -598,14 +598,14 @@ async function renderLocationDashboard(name) {
     <div class="print-header">
       <img src="logo.jpg" alt="Mission Critical Group" />
       <div>
-        <div class="print-header-title">${escapeHtml(name)} — Location Dashboard</div>
+        <div class="print-header-title">${escapeHtml(name)} — Site Dashboard</div>
         <div class="print-header-sub">Generated ${formatDate(nowIso())}</div>
       </div>
     </div>
     <div class="page-header">
       <div>
         <h1>${escapeHtml(name)}</h1>
-        <p><a href="#/locations">← All Locations</a></p>
+        <p><a href="#/locations">← All Sites</a></p>
       </div>
       <div style="display:flex; gap:8px; flex-wrap:wrap;">
         <button class="btn" id="locShareBtn">🔗 Share</button>
@@ -837,7 +837,7 @@ async function renderNewInspection() {
         </div>
       </div>
       <div class="form-group">
-        <label for="niLocation">Location</label>
+        <label for="niLocation">Site</label>
         <select id="niLocation">${selectOptionsHtml(locations, "")}</select>
       </div>
       <div class="modal-actions" style="justify-content:flex-start; margin-top:22px;">
@@ -858,7 +858,7 @@ async function renderNewInspection() {
   templateSelect.addEventListener("change", suggestTitle);
   titleInput.addEventListener("input", () => { titleInput.dataset.touched = "1"; });
   wirePickOrAddSelect(document.getElementById("niInspector"), "New inspector name:", Store.addInspector, () => {});
-  wirePickOrAddSelect(document.getElementById("niLocation"), "New location:", Store.addLocation, () => {});
+  wirePickOrAddSelect(document.getElementById("niLocation"), "New site:", Store.addLocation, () => {});
 
   document.getElementById("startInspectionBtn").addEventListener("click", async () => {
     const tpl = templates.find((t) => t.id === templateSelect.value);
@@ -936,7 +936,7 @@ async function renderInspectionRun(id) {
           <select id="riInspector">${selectOptionsHtml(inspectors, insp.inspector)}</select>
         </div>
         <div class="form-group" style="margin-bottom:0">
-          <label for="riLocation">Location</label>
+          <label for="riLocation">Site</label>
           <select id="riLocation">${selectOptionsHtml(locations, insp.location)}</select>
         </div>
       </div>
@@ -962,7 +962,7 @@ async function renderInspectionRun(id) {
   renderChecklistItems(insp);
 
   wirePickOrAddSelect(document.getElementById("riInspector"), "New inspector name:", Store.addInspector, (val) => { insp.inspector = val; scheduleInspectionSave(insp); });
-  wirePickOrAddSelect(document.getElementById("riLocation"), "New location:", Store.addLocation, (val) => { insp.location = val; scheduleInspectionSave(insp); });
+  wirePickOrAddSelect(document.getElementById("riLocation"), "New site:", Store.addLocation, (val) => { insp.location = val; scheduleInspectionSave(insp); });
   document.getElementById("riDate").addEventListener("input", (e) => { insp.date = e.target.value; scheduleInspectionSave(insp); });
 
   document.getElementById("photoInput").addEventListener("change", async (e) => {
@@ -1161,13 +1161,13 @@ async function renderInspectionReport(id) {
       <img src="logo.jpg" alt="Mission Critical Group" />
       <div>
         <div class="print-header-title">${escapeHtml(insp.title)}</div>
-        <div class="print-header-sub">${escapeHtml(insp.templateName)} · ${escapeHtml(insp.inspector || "Unassigned")} · ${escapeHtml(insp.location || "No location")} · ${formatDate(insp.date)}</div>
+        <div class="print-header-sub">${escapeHtml(insp.templateName)} · ${escapeHtml(insp.inspector || "Unassigned")} · ${escapeHtml(insp.location || "No site")} · ${formatDate(insp.date)}</div>
       </div>
     </div>
     <div class="page-header">
       <div>
         <h1>${escapeHtml(insp.title)}</h1>
-        <p>${escapeHtml(insp.templateName)} · ${escapeHtml(insp.inspector || "Unassigned")} · ${escapeHtml(insp.location || "No location")} · ${formatDate(insp.date)}</p>
+        <p>${escapeHtml(insp.templateName)} · ${escapeHtml(insp.inspector || "Unassigned")} · ${escapeHtml(insp.location || "No site")} · ${formatDate(insp.date)}</p>
       </div>
       <div style="display:flex; gap:8px;">
         <button class="btn" id="shareBtn">🔗 Share</button>
@@ -1237,7 +1237,7 @@ async function renderInspectionsHistory() {
       <a class="btn btn-primary" href="#/inspections/new">+ New Inspection</a>
     </div>
     <div class="toolbar">
-      <input type="search" id="histSearch" placeholder="Search by title, inspector, location…" value="${escapeHtml(historyFilters.search)}" style="max-width:260px" />
+      <input type="search" id="histSearch" placeholder="Search by title, inspector, site…" value="${escapeHtml(historyFilters.search)}" style="max-width:260px" />
       <select id="histStatus" style="max-width:160px">
         <option value="all" ${historyFilters.status === "all" ? "selected" : ""}>All statuses</option>
         <option value="completed" ${historyFilters.status === "completed" ? "selected" : ""}>Completed</option>
