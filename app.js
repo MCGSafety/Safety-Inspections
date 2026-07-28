@@ -1218,14 +1218,15 @@ async function renderInspectionReport(id) {
 
 /* ---------------- Inspections History ---------------- */
 
-let historyFilters = { search: "", status: "all", template: "all" };
+let historyFilters = { search: "", status: "all", template: "all", location: "all" };
 
 async function renderInspectionsHistory() {
-  const [all, templates] = await Promise.all([Store.getInspections(), Store.getTemplates()]);
+  const [all, templates, locations] = await Promise.all([Store.getInspections(), Store.getTemplates(), Store.getLocations()]);
   const q = historyFilters.search.trim().toLowerCase();
   const filtered = all.filter((i) => {
     if (historyFilters.status !== "all" && i.status !== historyFilters.status) return false;
     if (historyFilters.template !== "all" && i.templateId !== historyFilters.template) return false;
+    if (historyFilters.location !== "all" && i.location !== historyFilters.location) return false;
     if (q && !(`${i.title} ${i.inspector} ${i.location}`.toLowerCase().includes(q))) return false;
     return true;
   });
@@ -1246,6 +1247,10 @@ async function renderInspectionsHistory() {
         <option value="all">All templates</option>
         ${templates.map((t) => `<option value="${t.id}" ${historyFilters.template === t.id ? "selected" : ""}>${escapeHtml(t.name)}</option>`).join("")}
       </select>
+      <select id="histLocation" style="max-width:180px">
+        <option value="all">All sites</option>
+        ${locations.map((l) => `<option value="${escapeHtml(l.name)}" ${historyFilters.location === l.name ? "selected" : ""}>${escapeHtml(l.name)}</option>`).join("")}
+      </select>
     </div>
     ${filtered.length ? `<div class="list">${filtered.map(renderInspectionListItem).join("")}</div>`
       : `<div class="empty-state"><h3>No inspections match</h3><p>Try adjusting your filters.</p></div>`}
@@ -1254,6 +1259,7 @@ async function renderInspectionsHistory() {
   document.getElementById("histSearch").addEventListener("input", (e) => { historyFilters.search = e.target.value; render(); });
   document.getElementById("histStatus").addEventListener("change", (e) => { historyFilters.status = e.target.value; render(); });
   document.getElementById("histTemplate").addEventListener("change", (e) => { historyFilters.template = e.target.value; render(); });
+  document.getElementById("histLocation").addEventListener("change", (e) => { historyFilters.location = e.target.value; render(); });
 }
 
 /* ---------------- Issues ---------------- */
