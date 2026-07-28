@@ -336,7 +336,7 @@ async function renderDashboard() {
       <div class="sticky-side">
         <div class="section-title" style="margin-top:0">Open Issues</div>
         ${topIssues.length ? `<div class="list">${topIssues.map((iss) => `
-          <a class="list-item" href="#/issues" style="cursor:pointer">
+          <a class="list-item issue-open" href="#/issues" style="cursor:pointer">
             <div class="list-item-main">
               <div class="list-item-title">${escapeHtml(iss.itemText)}</div>
               <div class="list-item-sub">${escapeHtml(iss.inspectionTitle)} · ${formatDate(iss.createdAt)}</div>
@@ -653,7 +653,6 @@ async function renderInspectionRun(id) {
       </div>
       <div style="display:flex; gap:8px;">
         <button class="btn" id="saveExitBtn">Save &amp; Exit</button>
-        <button class="btn btn-primary" id="completeBtn">Complete Inspection</button>
       </div>
     </div>
 
@@ -678,6 +677,11 @@ async function renderInspectionRun(id) {
     <p class="hint" id="progressLabel" style="margin-top:-14px; margin-bottom:16px;">${answered} of ${insp.items.length} items answered</p>
 
     <div id="checklistItems"></div>
+
+    <div class="modal-actions" style="justify-content:flex-end; margin-top:8px;">
+      <button class="btn" id="saveExitBtn2">Save &amp; Exit</button>
+      <button class="btn btn-primary" id="completeBtn">Complete Inspection</button>
+    </div>
 
     <input type="file" id="photoInput" accept="image/*" capture="environment" multiple hidden />
   `;
@@ -707,9 +711,9 @@ async function renderInspectionRun(id) {
     renderChecklistItems(insp);
   });
 
-  document.getElementById("saveExitBtn").addEventListener("click", async () => {
-    const btn = document.getElementById("saveExitBtn");
-    btn.disabled = true;
+  const saveExitBtns = [document.getElementById("saveExitBtn"), document.getElementById("saveExitBtn2")];
+  saveExitBtns.forEach((btn) => btn.addEventListener("click", async () => {
+    saveExitBtns.forEach((b) => { b.disabled = true; });
     try {
       await flushInspectionSave(insp);
       showToast("Progress saved");
@@ -717,9 +721,9 @@ async function renderInspectionRun(id) {
     } catch (err) {
       console.error(err);
       showToast("Save failed — check your connection");
-      btn.disabled = false;
+      saveExitBtns.forEach((b) => { b.disabled = false; });
     }
-  });
+  }));
 
   document.getElementById("completeBtn").addEventListener("click", async () => {
     const unanswered = insp.items.filter((it) => !it.result).length;
@@ -959,7 +963,7 @@ async function renderIssues() {
       <button class="tab-btn ${issuesTab === "all" ? "active" : ""}" data-tab="all">All (${all.length})</button>
     </div>
     ${shown.length ? `<div class="list">${shown.map((iss) => `
-      <div class="card card-pad">
+      <div class="card card-pad ${iss.status === "open" ? "card-issue-open" : ""}">
         <div style="display:flex; justify-content:space-between; gap:12px; align-items:flex-start;">
           <div style="min-width:0;">
             <div class="list-item-title">${escapeHtml(iss.itemText)}</div>
