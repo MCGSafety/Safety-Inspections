@@ -85,7 +85,7 @@ function monthlyInspectionCounts(inspections, months = 6) {
     const monthStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
     const monthEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 1);
     const value = inspections.filter((insp) => {
-      const d = new Date(insp.createdAt);
+      const d = new Date(insp.date || insp.createdAt);
       return d >= monthStart && d < monthEnd;
     }).length;
     buckets.push({ label: monthStart.toLocaleDateString(undefined, { month: "short" }), value });
