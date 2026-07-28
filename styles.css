@@ -79,12 +79,12 @@ button { font-family: inherit; }
   color: var(--text);
   cursor: pointer;
 }
-.brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 17px; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 17px; }
 .brand-mark {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 28px; height: 28px; border-radius: 8px;
-  background: var(--primary); color: white; font-size: 15px;
+  padding: 3px 7px; border-radius: 6px; background: #fff;
 }
+.brand-logo-img { display: block; height: 26px; width: auto; }
 .topnav { display: flex; gap: 4px; margin-left: 12px; flex-wrap: wrap; }
 .topnav a {
   padding: 8px 12px;
