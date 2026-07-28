@@ -438,12 +438,21 @@ async function renderDashboard() {
   const hasSeverityData = severityChart.some((d) => d.value > 0);
 
   contentEl.innerHTML = `
+    <div class="print-header">
+      <img src="logo.jpg" alt="Mission Critical Group" />
+      <div>
+        <div class="print-header-title">Safety Inspection Dashboard</div>
+        <div class="print-header-sub">Generated ${formatDate(nowIso())}</div>
+      </div>
+    </div>
     <div class="page-header">
       <div>
         <h1>Dashboard</h1>
         <p>Overview of your safety inspection program.</p>
       </div>
-      <div style="display:flex; gap:8px;">
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="btn" id="dashShareBtn">🔗 Share</button>
+        <button class="btn" id="dashPrintBtn">🖨 Print</button>
         <a class="btn" href="#/templates/new">+ New Template</a>
         <a class="btn btn-primary" href="#/inspections/new">+ New Inspection</a>
       </div>
@@ -515,6 +524,11 @@ async function renderDashboard() {
       </div>
     </div>
   `;
+
+  document.getElementById("dashShareBtn").addEventListener("click", () => {
+    shareLink(buildAppUrl("#/dashboard"), "Safety Inspection Dashboard", "Safety inspection dashboard");
+  });
+  document.getElementById("dashPrintBtn").addEventListener("click", () => window.print());
 }
 
 /* ---------------- Templates List ---------------- */
@@ -1001,14 +1015,17 @@ function renderChecklistItems(insp) {
 
 /* ---------------- Inspection Report (read-only) ---------------- */
 
-function buildInspectionUrl(id) {
-  return `${location.origin}${location.pathname}#/inspections/${id}`;
+function buildAppUrl(hash) {
+  return `${location.origin}${location.pathname}${hash}`;
 }
 
-async function shareInspection(insp) {
-  const url = buildInspectionUrl(insp.id);
+function buildInspectionUrl(id) {
+  return buildAppUrl(`#/inspections/${id}`);
+}
+
+async function shareLink(url, title, text) {
   if (navigator.share) {
-    try { await navigator.share({ title: insp.title, text: `Safety inspection: ${insp.title}`, url }); }
+    try { await navigator.share({ title, text, url }); }
     catch (e) { /* user cancelled the share sheet */ }
     return;
   }
@@ -1018,6 +1035,10 @@ async function shareInspection(insp) {
   } catch (e) {
     window.prompt("Copy this link:", url);
   }
+}
+
+async function shareInspection(insp) {
+  await shareLink(buildInspectionUrl(insp.id), insp.title, `Safety inspection: ${insp.title}`);
 }
 
 async function renderInspectionReport(id) {

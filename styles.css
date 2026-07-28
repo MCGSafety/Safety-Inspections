@@ -293,11 +293,12 @@ table.report-table th { color: var(--text-muted); font-size: 12px; text-transfor
     --neutral-light: #f1f5f9;
     --shadow: none;
   }
-  .topbar, .toolbar, .btn, .sticky-side .card:not(.print-summary), .page-header { display: none !important; }
+  .topbar, .toolbar, .btn, .page-header { display: none !important; }
   .print-header { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; }
   body { background: white; color: #111827; }
   .content { max-width: 100%; padding: 0; }
   .card { box-shadow: none; border-color: #ccc; }
-  .report-item { break-inside: avoid; }
-  .photo-thumb { break-inside: avoid; }
+  .report-item, .photo-thumb, .stat-card, .chart-grid .card, .list-item { break-inside: avoid; }
+  .two-col { grid-template-columns: 1fr; }
+  .sticky-side { position: static; }
 }
