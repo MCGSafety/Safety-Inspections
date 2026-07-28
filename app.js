@@ -727,6 +727,17 @@ async function renderInspectionRun(id) {
       showToast(`${unanswered} item${unanswered === 1 ? "" : "s"} still need${unanswered === 1 ? "s" : ""} a response`);
       return;
     }
+    const missingNotes = insp.items.filter((it) => it.result === "fail" && !it.notes.trim());
+    if (missingNotes.length > 0) {
+      showToast(`${missingNotes.length} failed item${missingNotes.length === 1 ? "" : "s"} need${missingNotes.length === 1 ? "s" : ""} a note explaining the issue`);
+      const badTextarea = document.querySelector(`textarea[data-item="${missingNotes[0].id}"]`);
+      if (badTextarea) {
+        badTextarea.classList.add("input-required");
+        badTextarea.scrollIntoView({ behavior: "smooth", block: "center" });
+        badTextarea.focus();
+      }
+      return;
+    }
     const btn = document.getElementById("completeBtn");
     btn.disabled = true;
     insp.status = "completed";
@@ -760,7 +771,7 @@ function renderChecklistItems(insp) {
         <button class="toggle-btn fail ${it.result === "fail" ? "active" : ""}" data-result="fail" data-item="${it.id}">✕ Fail</button>
         <button class="toggle-btn na ${it.result === "na" ? "active" : ""}" data-result="na" data-item="${it.id}">— N/A</button>
       </div>
-      <textarea data-notes data-item="${it.id}" placeholder="Notes (optional)">${escapeHtml(it.notes)}</textarea>
+      <textarea data-notes data-item="${it.id}" placeholder="${it.result === "fail" ? "Describe the issue (required)" : "Notes (optional)"}" class="${it.result === "fail" && !it.notes.trim() ? "input-required" : ""}">${escapeHtml(it.notes)}</textarea>
       <div class="photo-row" data-photo-row="${it.id}">
         ${it.photos.map((p) => `
           <div class="photo-thumb">
@@ -790,6 +801,7 @@ function renderChecklistItems(insp) {
     ta.addEventListener("input", () => {
       const item = insp.items.find((i) => i.id === ta.dataset.item);
       item.notes = ta.value;
+      if (item.result === "fail") ta.classList.toggle("input-required", !ta.value.trim());
       scheduleInspectionSave(insp);
     });
   });
