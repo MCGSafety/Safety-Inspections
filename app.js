@@ -417,7 +417,7 @@ function renderInspectionListItem(insp) {
     </a>`;
 }
 
-function buildDashboardBody({ inspections, issues, templates }) {
+function buildDashboardBody({ inspections, issues }) {
   const completed = inspections.filter((i) => i.status === "completed");
   let pass = 0, fail = 0;
   completed.forEach((i) => i.items.forEach((it) => {
@@ -447,33 +447,28 @@ function buildDashboardBody({ inspections, issues, templates }) {
   const severityChart = severityCounts(openIssues);
   const hasSeverityData = severityChart.some((d) => d.value > 0);
 
-  const fourthStat = templates
-    ? `<div class="card stat-card"><div class="stat-label">Templates</div><div class="stat-value">${templates.length}</div><div class="stat-sub">Checklist types</div></div>`
-    : `<div class="card stat-card"><div class="stat-label">Total Inspections</div><div class="stat-value">${inspections.length}</div><div class="stat-sub">All time</div></div>`;
-
   return `
     <div class="grid-stats">
-      <div class="card stat-card">
+      <a class="card stat-card" href="#/issues">
         <div class="stat-label">Open Issues</div>
         <div class="stat-value" style="color:${openIssues.length ? "var(--danger)" : "var(--text)"}">${openIssues.length}</div>
         <div class="stat-sub">Needing follow-up</div>
-      </div>
-      <div class="card stat-card">
+      </a>
+      <a class="card stat-card" href="#/issues">
         <div class="stat-label">Issues Resolved</div>
         <div class="stat-value" style="color:var(--success)">${resolvedIssues.length}</div>
         <div class="stat-sub">${resolutionRate === null ? "No issues yet" : resolutionRate + "% resolution rate"}</div>
-      </div>
-      <div class="card stat-card">
+      </a>
+      <a class="card stat-card" href="#/inspections">
         <div class="stat-label">Pass Rate</div>
         <div class="stat-value">${passRate === null ? "—" : passRate + "%"}</div>
         <div class="stat-sub">Across completed inspections</div>
-      </div>
-      <div class="card stat-card">
+      </a>
+      <a class="card stat-card" href="#/inspections">
         <div class="stat-label">Inspections This Month</div>
         <div class="stat-value">${thisMonth.length}</div>
         <div class="stat-sub">${inspections.length} total</div>
-      </div>
-      ${fourthStat}
+      </a>
     </div>
 
     <div class="section-title" style="margin-top:8px;">Trends</div>
@@ -533,7 +528,7 @@ function buildDashboardBody({ inspections, issues, templates }) {
 }
 
 async function renderDashboard() {
-  const [templates, inspections, issues] = await Promise.all([Store.getTemplates(), Store.getInspections(), Store.getIssues()]);
+  const [inspections, issues] = await Promise.all([Store.getInspections(), Store.getIssues()]);
 
   contentEl.innerHTML = `
     <div class="print-header">
@@ -556,7 +551,7 @@ async function renderDashboard() {
       </div>
     </div>
 
-    ${buildDashboardBody({ inspections, issues, templates })}
+    ${buildDashboardBody({ inspections, issues })}
   `;
 
   document.getElementById("dashShareBtn").addEventListener("click", () => {
@@ -613,7 +608,7 @@ async function renderLocationDashboard(name) {
       </div>
     </div>
 
-    ${buildDashboardBody({ inspections, issues, templates: null })}
+    ${buildDashboardBody({ inspections, issues })}
   `;
 
   document.getElementById("locShareBtn").addEventListener("click", () => {
