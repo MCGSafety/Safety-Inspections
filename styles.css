@@ -268,9 +268,30 @@ table.report-table { width: 100%; border-collapse: collapse; font-size: 13.5px; 
 table.report-table th, table.report-table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
 table.report-table th { color: var(--text-muted); font-size: 12px; text-transform: uppercase; }
 
+.report-item { padding: 14px 0; border-bottom: 1px solid var(--border); }
+
+.print-header { display: none; }
+.print-header img { height: 40px; width: auto; }
+.print-header-title { font-size: 20px; font-weight: 700; }
+.print-header-sub { font-size: 13px; color: #555; margin-top: 2px; }
+
 @media print {
-  .topbar, .toolbar, .btn, .sticky-side .card:not(.print-summary) { display: none !important; }
-  body { background: white; }
+  /* Printed pages ignore the viewer's dark-mode preference and always use light colors. */
+  :root {
+    --bg: #ffffff; --surface: #ffffff; --surface-alt: #ffffff; --border: #ccc;
+    --text: #111827; --text-muted: #4b5563;
+    --primary: #0f766e; --primary-dark: #0b5c56; --primary-light: #e6fbf7;
+    --danger: #b91c1c; --danger-light: #fde8e8;
+    --warning: #b45309; --warning-light: #fdf1dc;
+    --success: #15803d; --success-light: #e7f6ec;
+    --neutral-light: #f1f5f9;
+    --shadow: none;
+  }
+  .topbar, .toolbar, .btn, .sticky-side .card:not(.print-summary), .page-header { display: none !important; }
+  .print-header { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; }
+  body { background: white; color: #111827; }
   .content { max-width: 100%; padding: 0; }
   .card { box-shadow: none; border-color: #ccc; }
+  .report-item { break-inside: avoid; }
+  .photo-thumb { break-inside: avoid; }
 }

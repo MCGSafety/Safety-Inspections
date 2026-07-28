@@ -833,6 +833,25 @@ function renderChecklistItems(insp) {
 
 /* ---------------- Inspection Report (read-only) ---------------- */
 
+function buildInspectionUrl(id) {
+  return `${location.origin}${location.pathname}#/inspections/${id}`;
+}
+
+async function shareInspection(insp) {
+  const url = buildInspectionUrl(insp.id);
+  if (navigator.share) {
+    try { await navigator.share({ title: insp.title, text: `Safety inspection: ${insp.title}`, url }); }
+    catch (e) { /* user cancelled the share sheet */ }
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(url);
+    showToast("Link copied — recipient will need access to connect");
+  } catch (e) {
+    window.prompt("Copy this link:", url);
+  }
+}
+
 async function renderInspectionReport(id) {
   const insp = await Store.getInspection(id);
   if (!insp) { contentEl.innerHTML = `<div class="empty-state"><h3>Inspection not found</h3><a href="#/inspections">Back to history</a></div>`; return; }
@@ -841,10 +860,14 @@ async function renderInspectionReport(id) {
     contentEl.innerHTML = `
       <div class="page-header">
         <div><h1>${escapeHtml(insp.title)}</h1><p>${escapeHtml(insp.templateName)} · ${statusBadge(insp.status)}</p></div>
-        <a class="btn btn-primary" href="#/inspections/${insp.id}/run">Continue Inspection</a>
+        <div style="display:flex; gap:8px;">
+          <button class="btn" id="shareBtn">🔗 Share</button>
+          <a class="btn btn-primary" href="#/inspections/${insp.id}/run">Continue Inspection</a>
+        </div>
       </div>
       <div class="empty-state"><h3>Still in progress</h3><p>This inspection hasn't been completed yet.</p></div>
     `;
+    document.getElementById("shareBtn").addEventListener("click", () => shareInspection(insp));
     return;
   }
 
@@ -854,12 +877,20 @@ async function renderInspectionReport(id) {
   const score = scoreFor(insp.items);
 
   contentEl.innerHTML = `
+    <div class="print-header">
+      <img src="logo.jpg" alt="Mission Critical Group" />
+      <div>
+        <div class="print-header-title">${escapeHtml(insp.title)}</div>
+        <div class="print-header-sub">${escapeHtml(insp.templateName)} · ${escapeHtml(insp.inspector || "Unassigned")} · ${escapeHtml(insp.location || "No location")} · ${formatDate(insp.date)}</div>
+      </div>
+    </div>
     <div class="page-header">
       <div>
         <h1>${escapeHtml(insp.title)}</h1>
         <p>${escapeHtml(insp.templateName)} · ${escapeHtml(insp.inspector || "Unassigned")} · ${escapeHtml(insp.location || "No location")} · ${formatDate(insp.date)}</p>
       </div>
       <div style="display:flex; gap:8px;">
+        <button class="btn" id="shareBtn">🔗 Share</button>
         <button class="btn" id="printBtn">🖨 Print / Save PDF</button>
         <button class="btn btn-ghost" id="deleteInspBtn" style="color:var(--danger)">Delete</button>
       </div>
@@ -874,7 +905,7 @@ async function renderInspectionReport(id) {
 
     <div class="card card-pad">
       ${insp.items.map((it) => `
-        <div style="padding:14px 0; border-bottom:1px solid var(--border);">
+        <div class="report-item">
           <div style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start;">
             <div style="font-weight:600; font-size:14.5px;">${escapeHtml(it.text)}</div>
             ${resultBadge(it.result)}
@@ -886,6 +917,8 @@ async function renderInspectionReport(id) {
     </div>
   `;
 
+  const shareBtn = document.getElementById("shareBtn");
+  if (shareBtn) shareBtn.addEventListener("click", () => shareInspection(insp));
   const printBtn = document.getElementById("printBtn");
   if (printBtn) printBtn.addEventListener("click", () => window.print());
   const delBtn = document.getElementById("deleteInspBtn");
