@@ -150,7 +150,7 @@ function renderSetupScreen(errorMsg) {
       ${errorMsg ? `<p class="hint" style="color:var(--danger)">${escapeHtml(errorMsg)}</p>` : ""}
       <div class="form-group">
         <label for="setupToken">Personal Access Token</label>
-        <input type="password" id="setupToken" placeholder="patXXXXXXXXXXXXXX.xxxxxxxx..." />
+        <input type="text" id="setupToken" placeholder="patXXXXXXXXXXXXXX.xxxxxxxx..." autocomplete="off" spellcheck="false" />
       </div>
       <button class="btn btn-primary" id="setupConnectBtn">Connect</button>
       <p class="hint" style="margin-top:14px;">
@@ -173,7 +173,8 @@ function renderSetupScreen(errorMsg) {
       location.reload();
     } catch (e) {
       clearAirtableToken();
-      renderSetupScreen(e.message || "Could not connect — check the token and its permissions.");
+      const detail = e.message || "Could not connect.";
+      renderSetupScreen(`${detail} — double-check you copied the whole token with no extra spaces, and that it was granted access to the SafeCheck base.`);
     }
   });
 }
