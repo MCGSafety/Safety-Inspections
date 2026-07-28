@@ -78,27 +78,17 @@ function formatShortDate(iso) {
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-function weeklyInspectionCounts(inspections, weeks = 8) {
-  const startOfWeek = (d) => {
-    const x = new Date(d);
-    const day = x.getDay();
-    const diff = (day === 0 ? -6 : 1) - day;
-    x.setDate(x.getDate() + diff);
-    x.setHours(0, 0, 0, 0);
-    return x;
-  };
-  const thisWeekStart = startOfWeek(new Date());
+function monthlyInspectionCounts(inspections, months = 6) {
+  const now = new Date();
   const buckets = [];
-  for (let i = weeks - 1; i >= 0; i--) {
-    const ws = new Date(thisWeekStart);
-    ws.setDate(ws.getDate() - i * 7);
-    const we = new Date(ws);
-    we.setDate(we.getDate() + 7);
+  for (let i = months - 1; i >= 0; i--) {
+    const monthStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 1);
     const value = inspections.filter((insp) => {
       const d = new Date(insp.createdAt);
-      return d >= ws && d < we;
+      return d >= monthStart && d < monthEnd;
     }).length;
-    buckets.push({ label: formatShortDate(ws), value });
+    buckets.push({ label: monthStart.toLocaleDateString(undefined, { month: "short" }), value });
   }
   return buckets;
 }
@@ -385,7 +375,11 @@ async function render() {
       else if (seg1 && seg2 === "run") { updateActiveNav("new-inspection"); await renderInspectionRun(seg1); }
       else if (seg1) { updateActiveNav("inspections"); await renderInspectionReport(seg1); }
       else { updateActiveNav("inspections"); await renderInspectionsHistory(); }
-    } else if (seg0 === "issues") { updateActiveNav("issues"); await renderIssues(); }
+    } else if (seg0 === "issues") {
+      updateActiveNav("issues");
+      if (seg1 === "open" || seg1 === "resolved" || seg1 === "all") issuesTab = seg1;
+      await renderIssues();
+    }
     else if (seg0 === "locations") {
       updateActiveNav("locations");
       if (seg1) { await renderLocationDashboard(decodeURIComponent(seg1)); }
@@ -440,8 +434,8 @@ function buildDashboardBody({ inspections, issues }) {
   const recentInspections = inspections.slice(0, 5);
   const topIssues = openIssues.slice().sort((a, b) => (b.severity === "high") - (a.severity === "high")).slice(0, 5);
 
-  const weeklyChart = weeklyInspectionCounts(inspections, 8);
-  const hasWeeklyActivity = weeklyChart.some((d) => d.value > 0);
+  const monthlyChart = monthlyInspectionCounts(inspections, 6);
+  const hasMonthlyActivity = monthlyChart.some((d) => d.value > 0);
   const trendChart = passRateTrend(completed, 10);
   const na = completed.reduce((sum, i) => sum + i.items.filter((it) => it.result === "na").length, 0);
   const severityChart = severityCounts(openIssues);
@@ -449,12 +443,12 @@ function buildDashboardBody({ inspections, issues }) {
 
   return `
     <div class="grid-stats">
-      <a class="card stat-card" href="#/issues">
+      <a class="card stat-card" href="#/issues/open">
         <div class="stat-label">Open Issues</div>
         <div class="stat-value" style="color:${openIssues.length ? "var(--danger)" : "var(--text)"}">${openIssues.length}</div>
         <div class="stat-sub">Needing follow-up</div>
       </a>
-      <a class="card stat-card" href="#/issues">
+      <a class="card stat-card" href="#/issues/resolved">
         <div class="stat-label">Issues Resolved</div>
         <div class="stat-value" style="color:var(--success)">${resolvedIssues.length}</div>
         <div class="stat-sub">${resolutionRate === null ? "No issues yet" : resolutionRate + "% resolution rate"}</div>
@@ -474,9 +468,9 @@ function buildDashboardBody({ inspections, issues }) {
     <div class="section-title" style="margin-top:8px;">Trends</div>
     <div class="chart-grid">
       <div class="card card-pad">
-        <div class="chart-title">Inspections per Week</div>
-        ${hasWeeklyActivity ? svgBarChart({ items: weeklyChart, barColor: "var(--primary)" })
-          : `<div class="empty-state" style="padding:24px 14px;"><p style="margin:0">No inspections in the last 8 weeks</p></div>`}
+        <div class="chart-title">Inspections per Month</div>
+        ${hasMonthlyActivity ? svgBarChart({ items: monthlyChart, barColor: "var(--primary)" })
+          : `<div class="empty-state" style="padding:24px 14px;"><p style="margin:0">No inspections in the last 6 months</p></div>`}
       </div>
       <div class="card card-pad">
         <div class="chart-title">Pass Rate Trend</div>
@@ -503,7 +497,7 @@ function buildDashboardBody({ inspections, issues }) {
       <div class="sticky-side">
         <div class="section-title" style="margin-top:0">Open Issues</div>
         ${topIssues.length ? `<div class="list">${topIssues.map((iss) => `
-          <a class="list-item issue-open" href="#/issues" style="cursor:pointer">
+          <a class="list-item issue-open" href="#/issues/open" style="cursor:pointer">
             <div class="list-item-main">
               <div class="list-item-title">${escapeHtml(iss.itemText)}</div>
               <div class="list-item-sub">${escapeHtml(iss.inspectionTitle)} · ${formatDate(iss.createdAt)}</div>
@@ -514,7 +508,7 @@ function buildDashboardBody({ inspections, issues }) {
 
         <div class="section-title">Recently Resolved</div>
         ${recentResolved.length ? `<div class="list">${recentResolved.map((iss) => `
-          <a class="list-item issue-resolved" href="#/issues" style="cursor:pointer">
+          <a class="list-item issue-resolved" href="#/issues/resolved" style="cursor:pointer">
             <div class="list-item-main">
               <div class="list-item-title">${escapeHtml(iss.itemText)}</div>
               <div class="list-item-sub">${escapeHtml(iss.inspectionTitle)} · Resolved ${formatDate(iss.resolvedAt)}</div>
@@ -1321,7 +1315,7 @@ async function renderIssues() {
   `;
 
   contentEl.querySelectorAll("[data-tab]").forEach((btn) => {
-    btn.addEventListener("click", () => { issuesTab = btn.dataset.tab; render(); });
+    btn.addEventListener("click", () => { goto(`#/issues/${btn.dataset.tab}`); });
   });
   contentEl.querySelectorAll("[data-severity]").forEach((sel) => {
     sel.addEventListener("change", async () => {
