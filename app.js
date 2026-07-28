@@ -72,12 +72,6 @@ function scoreFor(items) {
 
 /* ---------------- lightweight SVG charts (no library — themed via CSS vars) ---------------- */
 
-function formatShortDate(iso) {
-  const d = new Date(iso);
-  if (isNaN(d)) return "";
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
-
 function monthlyInspectionCounts(inspections, months = 6, completedTarget = null) {
   const now = new Date();
   const buckets = [];
@@ -99,12 +93,27 @@ function monthlyInspectionCounts(inspections, months = 6, completedTarget = null
   return buckets;
 }
 
-function passRateTrend(completed, n = 10) {
-  const sorted = completed.slice().sort((a, b) => new Date(a.date || a.createdAt) - new Date(b.date || b.createdAt));
-  return sorted.slice(-n).map((insp) => ({
-    label: formatShortDate(insp.date || insp.createdAt),
-    value: scoreFor(insp.items) ?? 0,
-  }));
+function monthlyPassRateTrend(completed, months = 6) {
+  const now = new Date();
+  const buckets = [];
+  for (let i = months - 1; i >= 0; i--) {
+    const monthStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 1);
+    const inMonth = completed.filter((insp) => {
+      const d = new Date(insp.date || insp.createdAt);
+      return d >= monthStart && d < monthEnd;
+    });
+    let pass = 0, fail = 0;
+    inMonth.forEach((insp) => insp.items.forEach((it) => {
+      if (it.result === "pass") pass++; else if (it.result === "fail") fail++;
+    }));
+    const scored = pass + fail;
+    buckets.push({
+      label: monthStart.toLocaleDateString(undefined, { month: "short" }),
+      value: scored > 0 ? Math.round((pass / scored) * 100) : 0,
+    });
+  }
+  return buckets;
 }
 
 function severityCounts(openIssues) {
@@ -417,7 +426,7 @@ function renderInspectionListItem(insp) {
     </a>`;
 }
 
-function buildDashboardBody({ inspections, issues, perSite = false }) {
+function buildDashboardBody({ inspections, issues, completedTarget = null }) {
   const completed = inspections.filter((i) => i.status === "completed");
   let pass = 0, fail = 0;
   completed.forEach((i) => i.items.forEach((it) => {
@@ -440,9 +449,9 @@ function buildDashboardBody({ inspections, issues, perSite = false }) {
   const recentInspections = inspections.slice(0, 5);
   const topIssues = openIssues.slice().sort((a, b) => (b.severity === "high") - (a.severity === "high")).slice(0, 5);
 
-  const monthlyChart = monthlyInspectionCounts(inspections, 6, perSite ? 4 : null);
+  const monthlyChart = monthlyInspectionCounts(inspections, 6, completedTarget);
   const hasMonthlyActivity = monthlyChart.some((d) => d.value > 0);
-  const trendChart = passRateTrend(completed, 10);
+  const trendChart = monthlyPassRateTrend(completed, 6);
   const na = completed.reduce((sum, i) => sum + i.items.filter((it) => it.result === "na").length, 0);
   const severityChart = severityCounts(openIssues);
   const hasSeverityData = severityChart.some((d) => d.value > 0);
@@ -551,7 +560,7 @@ async function renderDashboard() {
       </div>
     </div>
 
-    ${buildDashboardBody({ inspections, issues })}
+    ${buildDashboardBody({ inspections, issues, completedTarget: 12 })}
   `;
 
   document.getElementById("dashShareBtn").addEventListener("click", () => {
@@ -608,7 +617,7 @@ async function renderLocationDashboard(name) {
       </div>
     </div>
 
-    ${buildDashboardBody({ inspections, issues, perSite: true })}
+    ${buildDashboardBody({ inspections, issues, completedTarget: 4 })}
   `;
 
   document.getElementById("locShareBtn").addEventListener("click", () => {
