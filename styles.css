@@ -61,7 +61,7 @@ button { font-family: inherit; }
   display: flex;
   align-items: center;
   gap: 20px;
-  padding: 10px 20px;
+  padding: 14px 20px;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   position: sticky;
@@ -79,12 +79,16 @@ button { font-family: inherit; }
   color: var(--text);
   cursor: pointer;
 }
-.brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 17px; }
+.brand { display: flex; align-items: center; gap: 12px; font-weight: 700; font-size: 22px; }
 .brand-mark {
   display: inline-flex; align-items: center; justify-content: center;
-  padding: 3px 7px; border-radius: 6px; background: #fff;
+  padding: 5px 10px; border-radius: 8px; background: #fff;
 }
-.brand-logo-img { display: block; height: 26px; width: auto; }
+.brand-logo-img { display: block; height: 38px; width: auto; }
+@media (max-width: 760px) {
+  .brand { font-size: 18px; }
+  .brand-logo-img { height: 30px; }
+}
 .topnav { display: flex; gap: 4px; margin-left: 12px; flex-wrap: wrap; }
 .topnav a {
   padding: 8px 12px;
