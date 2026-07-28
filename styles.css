@@ -240,6 +240,12 @@ textarea.input-required::placeholder { color: var(--danger); opacity: 0.8; }
 @media (max-width: 800px) { .two-col { grid-template-columns: 1fr; } }
 .sticky-side { position: sticky; top: 76px; }
 
+.chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 28px; }
+@media (max-width: 800px) { .chart-grid { grid-template-columns: 1fr; } }
+.chart-title { font-size: 13px; font-weight: 700; color: var(--text-muted); margin-bottom: 10px; }
+.chart-svg { width: 100%; height: 160px; display: block; }
+.stacked-bar { display: flex; height: 28px; border-radius: 8px; overflow: hidden; gap: 2px; background: var(--surface); }
+
 .modal-backdrop {
   position: fixed; inset: 0; background: rgba(15,23,42,0.5); display: flex;
   align-items: center; justify-content: center; z-index: 100; padding: 16px;

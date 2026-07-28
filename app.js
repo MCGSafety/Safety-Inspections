@@ -70,6 +70,144 @@ function scoreFor(items) {
   return scored > 0 ? Math.round((pass / scored) * 100) : null;
 }
 
+/* ---------------- lightweight SVG charts (no library — themed via CSS vars) ---------------- */
+
+function formatShortDate(iso) {
+  const d = new Date(iso);
+  if (isNaN(d)) return "";
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function weeklyInspectionCounts(inspections, weeks = 8) {
+  const startOfWeek = (d) => {
+    const x = new Date(d);
+    const day = x.getDay();
+    const diff = (day === 0 ? -6 : 1) - day;
+    x.setDate(x.getDate() + diff);
+    x.setHours(0, 0, 0, 0);
+    return x;
+  };
+  const thisWeekStart = startOfWeek(new Date());
+  const buckets = [];
+  for (let i = weeks - 1; i >= 0; i--) {
+    const ws = new Date(thisWeekStart);
+    ws.setDate(ws.getDate() - i * 7);
+    const we = new Date(ws);
+    we.setDate(we.getDate() + 7);
+    const value = inspections.filter((insp) => {
+      const d = new Date(insp.createdAt);
+      return d >= ws && d < we;
+    }).length;
+    buckets.push({ label: formatShortDate(ws), value });
+  }
+  return buckets;
+}
+
+function passRateTrend(completed, n = 10) {
+  const sorted = completed.slice().sort((a, b) => new Date(a.date || a.createdAt) - new Date(b.date || b.createdAt));
+  return sorted.slice(-n).map((insp) => ({
+    label: formatShortDate(insp.date || insp.createdAt),
+    value: scoreFor(insp.items) ?? 0,
+  }));
+}
+
+function severityCounts(openIssues) {
+  const counts = { low: 0, medium: 0, high: 0 };
+  openIssues.forEach((i) => { counts[i.severity] = (counts[i.severity] || 0) + 1; });
+  return [
+    { label: "Low", value: counts.low, color: "var(--text-muted)" },
+    { label: "Medium", value: counts.medium, color: "var(--warning)" },
+    { label: "High", value: counts.high, color: "var(--danger)" },
+  ];
+}
+
+function svgBarChart({ items, height = 160, barColor = "var(--primary)", suffix = "" }) {
+  const width = 400;
+  const padding = { top: 22, right: 8, bottom: 24, left: 8 };
+  const chartW = width - padding.left - padding.right;
+  const chartH = height - padding.top - padding.bottom;
+  const max = Math.max(1, ...items.map((d) => d.value));
+  const n = items.length;
+  const gap = 8;
+  const barW = Math.min(24, (chartW - gap * (n - 1)) / n);
+  const usedW = barW * n + gap * (n - 1);
+  const startX = padding.left + (chartW - usedW) / 2;
+  const baselineY = padding.top + chartH;
+  const bars = items.map((d, i) => {
+    const x = startX + i * (barW + gap);
+    const h = d.value > 0 ? (d.value / max) * chartH : 0;
+    const y = baselineY - h;
+    return `
+      <g>
+        <rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${Math.max(h, 1).toFixed(1)}" rx="4" fill="${d.color || barColor}">
+          <title>${escapeHtml(d.label)}: ${d.value}${suffix}</title>
+        </rect>
+        ${d.value > 0 ? `<text x="${(x + barW / 2).toFixed(1)}" y="${(y - 6).toFixed(1)}" text-anchor="middle" font-size="10" fill="var(--text-muted)">${d.value}${suffix}</text>` : ""}
+        <text x="${(x + barW / 2).toFixed(1)}" y="${height - 7}" text-anchor="middle" font-size="9" fill="var(--text-muted)">${escapeHtml(d.label)}</text>
+      </g>`;
+  }).join("");
+  return `<svg viewBox="0 0 ${width} ${height}" class="chart-svg" role="img" aria-label="bar chart">
+    <line x1="${padding.left}" y1="${baselineY}" x2="${width - padding.right}" y2="${baselineY}" stroke="var(--border)" stroke-width="1" />
+    ${bars}
+  </svg>`;
+}
+
+function svgLineChart({ items, height = 160, color = "var(--primary)", suffix = "" }) {
+  const width = 400;
+  const padding = { top: 20, right: 14, bottom: 24, left: 14 };
+  const chartW = width - padding.left - padding.right;
+  const chartH = height - padding.top - padding.bottom;
+  const n = items.length;
+  const max = Math.max(...items.map((d) => d.value), 1);
+  const min = Math.min(...items.map((d) => d.value), 0);
+  const range = Math.max(max - min, 1);
+  const stepX = n > 1 ? chartW / (n - 1) : 0;
+  const points = items.map((d, i) => ({
+    x: padding.left + stepX * i,
+    y: padding.top + chartH - ((d.value - min) / range) * chartH,
+    d,
+  }));
+  const pathD = points.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" ");
+  const dots = points.map((p) => `
+    <circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="4" fill="${color}" stroke="var(--surface)" stroke-width="2">
+      <title>${escapeHtml(p.d.label)}: ${p.d.value}${suffix}</title>
+    </circle>`).join("");
+  const baselineY = padding.top + chartH;
+  const labelIdxs = n <= 5 ? points.map((_, i) => i) : [0, Math.floor((n - 1) / 2), n - 1];
+  const xLabels = labelIdxs.map((i) => `<text x="${points[i].x.toFixed(1)}" y="${height - 7}" text-anchor="middle" font-size="9" fill="var(--text-muted)">${escapeHtml(points[i].d.label)}</text>`).join("");
+  const last = points[points.length - 1];
+  return `<svg viewBox="0 0 ${width} ${height}" class="chart-svg" role="img" aria-label="line chart">
+    <line x1="${padding.left}" y1="${baselineY}" x2="${width - padding.right}" y2="${baselineY}" stroke="var(--border)" stroke-width="1" />
+    <path d="${pathD}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />
+    ${dots}
+    <text x="${last.x.toFixed(1)}" y="${Math.max(10, last.y - 10).toFixed(1)}" text-anchor="end" font-size="11" font-weight="700" fill="var(--text)">${last.d.value}${suffix}</text>
+    ${xLabels}
+  </svg>`;
+}
+
+function resultsBreakdownChart({ pass, fail, na }) {
+  const total = pass + fail + na;
+  if (total === 0) return `<div class="empty-state" style="padding:24px 14px;"><p style="margin:0">No completed inspections yet</p></div>`;
+  const segs = [
+    { label: "Pass", value: pass, color: "var(--success)" },
+    { label: "Fail", value: fail, color: "var(--danger)" },
+    { label: "N/A", value: na, color: "var(--text-muted)" },
+  ];
+  const bars = segs.filter((s) => s.value > 0).map((s) => {
+    const w = (s.value / total) * 100;
+    return `<div style="width:${w}%; background:${s.color};" title="${s.label}: ${s.value} (${Math.round(w)}%)"></div>`;
+  }).join("");
+  const legend = segs.map((s) => `
+    <div style="display:flex; align-items:center; gap:6px; font-size:12.5px; color:var(--text-muted);">
+      <span style="width:10px; height:10px; border-radius:3px; background:${s.color}; display:inline-block;"></span>
+      ${s.label} <strong style="color:var(--text);">${s.value}</strong>
+    </div>`).join("");
+  return `
+    <div class="stacked-bar">${bars}</div>
+    <div style="display:flex; gap:16px; margin-top:12px; flex-wrap:wrap;">${legend}</div>
+  `;
+}
+
 function compressImageToBlob(file, maxDim = 900, quality = 0.72) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -292,6 +430,13 @@ async function renderDashboard() {
   const recentInspections = inspections.slice(0, 5);
   const topIssues = openIssues.slice().sort((a, b) => (b.severity === "high") - (a.severity === "high")).slice(0, 5);
 
+  const weeklyChart = weeklyInspectionCounts(inspections, 8);
+  const hasWeeklyActivity = weeklyChart.some((d) => d.value > 0);
+  const trendChart = passRateTrend(completed, 10);
+  const na = completed.reduce((sum, i) => sum + i.items.filter((it) => it.result === "na").length, 0);
+  const severityChart = severityCounts(openIssues);
+  const hasSeverityData = severityChart.some((d) => d.value > 0);
+
   contentEl.innerHTML = `
     <div class="page-header">
       <div>
@@ -324,6 +469,29 @@ async function renderDashboard() {
         <div class="stat-label">Templates</div>
         <div class="stat-value">${templates.length}</div>
         <div class="stat-sub">Checklist types</div>
+      </div>
+    </div>
+
+    <div class="section-title" style="margin-top:8px;">Trends</div>
+    <div class="chart-grid">
+      <div class="card card-pad">
+        <div class="chart-title">Inspections per Week</div>
+        ${hasWeeklyActivity ? svgBarChart({ items: weeklyChart, barColor: "var(--primary)" })
+          : `<div class="empty-state" style="padding:24px 14px;"><p style="margin:0">No inspections in the last 8 weeks</p></div>`}
+      </div>
+      <div class="card card-pad">
+        <div class="chart-title">Pass Rate Trend</div>
+        ${trendChart.length ? svgLineChart({ items: trendChart, color: "var(--primary)", suffix: "%" })
+          : `<div class="empty-state" style="padding:24px 14px;"><p style="margin:0">No completed inspections yet</p></div>`}
+      </div>
+      <div class="card card-pad">
+        <div class="chart-title">Checklist Results</div>
+        ${resultsBreakdownChart({ pass, fail, na })}
+      </div>
+      <div class="card card-pad">
+        <div class="chart-title">Open Issues by Severity</div>
+        ${hasSeverityData ? svgBarChart({ items: severityChart, suffix: "" })
+          : `<div class="empty-state" style="padding:24px 14px;"><p style="margin:0">No open issues 🎉</p></div>`}
       </div>
     </div>
 
