@@ -1,7 +1,7 @@
 /* Data layer: Airtable-backed store shared across every device that has a
-   Personal Access Token for the SafeCheck base (see config.js for the base
-   ID). Uses the Airtable REST API directly via fetch — no client library
-   needed. */
+   Personal Access Token for The Safety Inspector base (see config.js for the
+   base ID). Uses the Airtable REST API directly via fetch — no client
+   library needed. */
 
 function uid(prefix) {
   return (prefix ? prefix + "_" : "") + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 8);

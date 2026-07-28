@@ -1,4 +1,4 @@
-/* SafeCheck — Safety Inspections app (vanilla JS, no build step) */
+/* The Safety Inspector — Safety Inspections app (vanilla JS, no build step) */
 
 const contentEl = document.getElementById("app-content");
 let seedChecked = false;
@@ -146,7 +146,7 @@ function renderSetupScreen(errorMsg) {
   contentEl.innerHTML = `
     <div class="card card-pad" style="max-width:520px; margin: 40px auto;">
       <h1 style="margin-top:0;">Connect to Airtable</h1>
-      <p class="hint">SafeCheck stores its data in a shared Airtable base so every device sees the same inspections. Paste a Personal Access Token to connect this device.</p>
+      <p class="hint">The Safety Inspector stores its data in a shared Airtable base so every device sees the same inspections. Paste a Personal Access Token to connect this device.</p>
       ${errorMsg ? `<p class="hint" style="color:var(--danger)">${escapeHtml(errorMsg)}</p>` : ""}
       <div class="form-group">
         <label for="setupToken">Personal Access Token</label>
@@ -156,8 +156,8 @@ function renderSetupScreen(errorMsg) {
       <p class="hint" style="margin-top:14px;">
         No token yet? Go to <strong>airtable.com/create/tokens</strong>, create one with scopes
         <strong>data.records:read</strong> and <strong>data.records:write</strong>, grant it access to the
-        <strong>SafeCheck</strong> base, then paste it here. Everyone on your team uses the same base — either
-        share this token or have each person create their own with access to SafeCheck.
+        <strong>The Safety Inspector</strong> base, then paste it here. Everyone on your team uses the same base — either
+        share this token or have each person create their own with access to it.
       </p>
     </div>
   `;
@@ -174,7 +174,7 @@ function renderSetupScreen(errorMsg) {
     } catch (e) {
       clearAirtableToken();
       const detail = e.message || "Could not connect.";
-      renderSetupScreen(`${detail} — double-check you copied the whole token with no extra spaces, and that it was granted access to the SafeCheck base.`);
+      renderSetupScreen(`${detail} — double-check you copied the whole token with no extra spaces, and that it was granted access to The Safety Inspector base.`);
     }
   });
 }
@@ -185,7 +185,7 @@ async function renderSettings() {
     <div class="card card-pad" style="max-width:480px;">
       <div class="form-group" style="margin-bottom:0;">
         <label>Connected base</label>
-        <div>SafeCheck — <a href="https://airtable.com/${AIRTABLE_BASE_ID}" target="_blank" rel="noopener">open in Airtable ↗</a></div>
+        <div>The Safety Inspector — <a href="https://airtable.com/${AIRTABLE_BASE_ID}" target="_blank" rel="noopener">open in Airtable ↗</a></div>
       </div>
       <div class="modal-actions" style="justify-content:flex-start; margin-top:20px;">
         <button class="btn btn-ghost" id="changeTokenBtn" style="color:var(--danger)">Disconnect This Device</button>

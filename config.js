@@ -1,5 +1,5 @@
 /* Per-device connection settings — the Airtable base this browser talks to.
-   The base itself (SafeCheck) already exists and is shared by everyone;
+   The base itself (The Safety Inspector) already exists and is shared by everyone;
    each device just needs a Personal Access Token to reach it. */
 
 const AIRTABLE_BASE_ID = "appADYVuHuL3OeWmy";
