@@ -682,8 +682,8 @@ async function renderTemplatesList() {
 
 let templateDraft = null;
 
-function freshTemplateItem(text = "") {
-  return { id: uid("item"), text };
+function freshTemplateItem(text = "", guidance = "") {
+  return { id: uid("item"), text, guidance };
 }
 
 async function renderTemplateEditor(id) {
@@ -738,7 +738,7 @@ async function renderTemplateEditor(id) {
   document.getElementById("saveTplBtn").addEventListener("click", async () => {
     const name = templateDraft.name.trim();
     if (!name) { showToast("Please enter a template name"); document.getElementById("tplName").focus(); return; }
-    templateDraft.items = templateDraft.items.map((it) => ({ ...it, text: it.text.trim() })).filter((it) => it.text);
+    templateDraft.items = templateDraft.items.map((it) => ({ ...it, text: it.text.trim(), guidance: (it.guidance || "").trim() })).filter((it) => it.text);
     if (!templateDraft.items.length) { showToast("Add at least one checklist item"); return; }
     templateDraft.name = name;
     templateDraft.description = templateDraft.description.trim();
@@ -778,7 +778,10 @@ function renderTemplateItemsRows() {
         <button class="btn btn-sm btn-ghost" data-move="up" data-idx="${idx}" ${idx === 0 ? "disabled" : ""} title="Move up" style="padding:2px 6px;">↑</button>
         <button class="btn btn-sm btn-ghost" data-move="down" data-idx="${idx}" ${idx === templateDraft.items.length - 1 ? "disabled" : ""} title="Move down" style="padding:2px 6px;">↓</button>
       </div>
-      <input type="text" data-item-text data-idx="${idx}" value="${escapeHtml(it.text)}" placeholder="Checklist item text" />
+      <div style="display:flex; flex-direction:column; gap:6px; flex:1;">
+        <input type="text" data-item-text data-idx="${idx}" value="${escapeHtml(it.text)}" placeholder="Checklist item text" />
+        <input type="text" data-item-guidance data-idx="${idx}" value="${escapeHtml(it.guidance || "")}" placeholder="Guidance for inspectors (optional) — what to check, how to verify" style="font-size:12.5px; color:var(--text-muted);" />
+      </div>
       <button class="btn btn-sm btn-ghost" data-remove-idx="${idx}" title="Remove item" style="color:var(--danger)">✕</button>
     </div>
   `).join("");
@@ -786,6 +789,11 @@ function renderTemplateItemsRows() {
   container.querySelectorAll("[data-item-text]").forEach((input) => {
     input.addEventListener("input", () => {
       templateDraft.items[+input.dataset.idx].text = input.value;
+    });
+  });
+  container.querySelectorAll("[data-item-guidance]").forEach((input) => {
+    input.addEventListener("input", () => {
+      templateDraft.items[+input.dataset.idx].guidance = input.value;
     });
   });
   container.querySelectorAll("[data-remove-idx]").forEach((btn) => {
@@ -890,7 +898,7 @@ async function renderNewInspection() {
       workArea,
       date,
       status: "in-progress",
-      items: tpl.items.map((it) => ({ id: it.id, text: it.text, result: null, notes: "", photos: [] })),
+      items: tpl.items.map((it) => ({ id: it.id, text: it.text, guidance: it.guidance || "", result: null, notes: "", photos: [] })),
       createdAt: nowIso(),
       completedAt: null,
     };
@@ -1063,6 +1071,7 @@ function renderChecklistItems(insp) {
       <div class="checklist-item-head">
         <div class="checklist-item-text">${escapeHtml(it.text)}</div>
       </div>
+      ${it.guidance ? `<div class="checklist-item-guidance">💡 ${escapeHtml(it.guidance)}</div>` : ""}
       <div class="result-toggles">
         <button class="toggle-btn pass ${it.result === "pass" ? "active" : ""}" data-result="pass" data-item="${it.id}">✓ Pass</button>
         <button class="toggle-btn fail ${it.result === "fail" ? "active" : ""}" data-result="fail" data-item="${it.id}">✕ Fail</button>

@@ -226,6 +226,7 @@ textarea.input-required::placeholder { color: var(--danger); opacity: 0.8; }
 }
 .checklist-item-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 12px; }
 .checklist-item-text { font-weight: 600; font-size: 14.5px; }
+.checklist-item-guidance { font-size: 12.5px; color: var(--text-muted); margin: -6px 0 12px; line-height: 1.4; }
 .result-toggles { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
 .toggle-btn {
   flex: 1; min-width: 84px; padding: 9px; border-radius: 8px; border: 1.5px solid var(--border);
