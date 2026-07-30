@@ -393,6 +393,7 @@ async function render() {
     } else if (seg0 === "issues") {
       updateActiveNav("issues");
       if (seg1 === "open" || seg1 === "resolved" || seg1 === "all") issuesTab = seg1;
+      issuesLocationFilter = seg2 ? decodeURIComponent(seg2) : null;
       await renderIssues();
     }
     else if (seg0 === "locations") {
@@ -426,7 +427,8 @@ function renderInspectionListItem(insp) {
     </a>`;
 }
 
-function buildDashboardBody({ inspections, issues, completedTarget = null }) {
+function buildDashboardBody({ inspections, issues, completedTarget = null, locationFilter = null }) {
+  const issuesPath = (tab) => `#/issues/${tab}${locationFilter ? "/" + encodeURIComponent(locationFilter) : ""}`;
   const completed = inspections.filter((i) => i.status === "completed");
   let pass = 0, fail = 0;
   completed.forEach((i) => i.items.forEach((it) => {
@@ -458,12 +460,12 @@ function buildDashboardBody({ inspections, issues, completedTarget = null }) {
 
   return `
     <div class="grid-stats">
-      <a class="card stat-card" href="#/issues/open">
+      <a class="card stat-card" href="${issuesPath("open")}">
         <div class="stat-label">Open Issues</div>
         <div class="stat-value" style="color:${openIssues.length ? "var(--danger)" : "var(--text)"}">${openIssues.length}</div>
         <div class="stat-sub">Needing follow-up</div>
       </a>
-      <a class="card stat-card" href="#/issues/resolved">
+      <a class="card stat-card" href="${issuesPath("resolved")}">
         <div class="stat-label">Issues Resolved</div>
         <div class="stat-value" style="color:var(--success)">${resolvedIssues.length}</div>
         <div class="stat-sub">${resolutionRate === null ? "No issues yet" : resolutionRate + "% resolution rate"}</div>
@@ -512,7 +514,7 @@ function buildDashboardBody({ inspections, issues, completedTarget = null }) {
       <div class="sticky-side">
         <div class="section-title" style="margin-top:0">Open Issues</div>
         ${topIssues.length ? `<div class="list">${topIssues.map((iss) => `
-          <a class="list-item issue-open" href="#/issues/open" style="cursor:pointer">
+          <a class="list-item issue-open" href="${issuesPath("open")}" style="cursor:pointer">
             <div class="list-item-main">
               <div class="list-item-title">${escapeHtml(iss.itemText)}</div>
               <div class="list-item-sub">${escapeHtml(iss.inspectionTitle)} · ${formatDate(iss.createdAt)}</div>
@@ -523,7 +525,7 @@ function buildDashboardBody({ inspections, issues, completedTarget = null }) {
 
         <div class="section-title">Recently Resolved</div>
         ${recentResolved.length ? `<div class="list">${recentResolved.map((iss) => `
-          <a class="list-item issue-resolved" href="#/issues/resolved" style="cursor:pointer">
+          <a class="list-item issue-resolved" href="${issuesPath("resolved")}" style="cursor:pointer">
             <div class="list-item-main">
               <div class="list-item-title">${escapeHtml(iss.itemText)}</div>
               <div class="list-item-sub">${escapeHtml(iss.inspectionTitle)} · Resolved ${formatDate(iss.resolvedAt)}</div>
@@ -617,7 +619,7 @@ async function renderLocationDashboard(name) {
       </div>
     </div>
 
-    ${buildDashboardBody({ inspections, issues, completedTarget: 4 })}
+    ${buildDashboardBody({ inspections, issues, completedTarget: 4, locationFilter: name })}
   `;
 
   document.getElementById("locShareBtn").addEventListener("click", () => {
@@ -1294,16 +1296,23 @@ async function renderInspectionsHistory() {
 /* ---------------- Issues ---------------- */
 
 let issuesTab = "open";
+let issuesLocationFilter = null;
 
 async function renderIssues() {
-  const all = await Store.getIssues();
+  const allSites = await Store.getIssues();
+  const all = issuesLocationFilter ? allSites.filter((i) => i.location === issuesLocationFilter) : allSites;
   const open = all.filter((i) => i.status === "open");
   const resolved = all.filter((i) => i.status === "resolved");
   const shown = issuesTab === "open" ? open : issuesTab === "resolved" ? resolved : all;
 
   contentEl.innerHTML = `
     <div class="page-header">
-      <div><h1>Issues</h1><p>Failed items from inspections, tracked until resolved.</p></div>
+      <div>
+        <h1>Issues</h1>
+        <p>${issuesLocationFilter
+          ? `Failed items at <strong>${escapeHtml(issuesLocationFilter)}</strong>. <a href="#/issues/${issuesTab}">Show all sites</a>`
+          : "Failed items from inspections, tracked until resolved."}</p>
+      </div>
     </div>
     <div class="tabs">
       <button class="tab-btn ${issuesTab === "open" ? "active" : ""}" data-tab="open">Open (${open.length})</button>
@@ -1339,7 +1348,9 @@ async function renderIssues() {
   `;
 
   contentEl.querySelectorAll("[data-tab]").forEach((btn) => {
-    btn.addEventListener("click", () => { goto(`#/issues/${btn.dataset.tab}`); });
+    btn.addEventListener("click", () => {
+      goto(`#/issues/${btn.dataset.tab}${issuesLocationFilter ? "/" + encodeURIComponent(issuesLocationFilter) : ""}`);
+    });
   });
   contentEl.querySelectorAll("[data-severity]").forEach((sel) => {
     sel.addEventListener("change", async () => {
