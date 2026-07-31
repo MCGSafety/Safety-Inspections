@@ -459,10 +459,6 @@ const Store = {
     if (isNew) tpl.id = rec.id;
     return fromTemplateRecord(rec);
   },
-  async deleteTemplate(id) {
-    await atDelete("Templates", id);
-  },
-
   // ---- Inspections ----
   async getInspections() {
     const records = await atListAll("Inspections", { "sort[0][field]": "Date", "sort[0][direction]": "desc" });

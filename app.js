@@ -649,28 +649,11 @@ async function renderTemplatesList() {
         <div class="list-item-actions">
           <a class="btn btn-sm btn-primary" href="#/inspections/new" data-start-tpl="${t.id}">Start</a>
           <a class="btn btn-sm" href="#/templates/${t.id}">Edit</a>
-          <button class="btn btn-sm btn-ghost" data-delete-tpl="${t.id}" title="Delete template" aria-label="Delete template">🗑</button>
         </div>
       </div>`).join("")}</div>`
       : `<div class="empty-state"><h3>No templates yet</h3><p>Create a checklist template to start running inspections.</p><a class="btn btn-primary" style="margin-top:10px" href="#/templates/new">+ New Template</a></div>`}
   `;
 
-  contentEl.querySelectorAll("[data-delete-tpl]").forEach((btn) => {
-    btn.addEventListener("click", (e) => {
-      e.preventDefault();
-      const id = btn.dataset.deleteTpl;
-      const tpl = templates.find((t) => t.id === id);
-      confirmDialog({
-        title: "Delete template?",
-        message: `Delete "${tpl ? tpl.name : "this template"}"? Past inspections that used it will be kept.`,
-        confirmText: "Delete",
-        onConfirm: async () => {
-          try { await Store.deleteTemplate(id); showToast("Template deleted"); render(); }
-          catch (err) { console.error(err); showToast("Delete failed — check your connection"); }
-        },
-      });
-    });
-  });
   contentEl.querySelectorAll("[data-start-tpl]").forEach((a) => {
     a.addEventListener("click", (e) => {
       e.preventDefault();
@@ -725,7 +708,6 @@ async function renderTemplateEditor(id) {
       <div class="modal-actions" style="justify-content:flex-start; margin-top:22px;">
         <button class="btn btn-primary" id="saveTplBtn">Save Template</button>
         <a class="btn" href="#/templates">Cancel</a>
-        ${existing ? `<button class="btn btn-ghost" id="deleteTplBtn" style="margin-left:auto; color:var(--danger)">Delete</button>` : ""}
       </div>
     </div>
   `;
@@ -756,19 +738,6 @@ async function renderTemplateEditor(id) {
       btn.disabled = false;
     }
   });
-  const delBtn = document.getElementById("deleteTplBtn");
-  if (delBtn) {
-    delBtn.addEventListener("click", () => {
-      confirmDialog({
-        title: "Delete template?",
-        message: `Delete "${templateDraft.name}"? Past inspections that used it will be kept.`,
-        onConfirm: async () => {
-          try { await Store.deleteTemplate(id); showToast("Template deleted"); goto("#/templates"); }
-          catch (err) { console.error(err); showToast("Delete failed — check your connection"); }
-        },
-      });
-    });
-  }
 }
 
 function renderTemplateItemsRows() {
